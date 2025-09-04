@@ -3,6 +3,8 @@ package com.meditrack.patient.interfaces.rest;
 import com.meditrack.patient.application.usecase.CreatePatientUseCase;
 import com.meditrack.patient.application.usecase.GetPatientUseCase;
 import com.meditrack.patient.application.usecase.UpdatePatientUseCase;
+import com.meditrack.patient.domain.model.Patient;
+import com.meditrack.patient.domain.model.valueobjects.SSN;
 import com.meditrack.patient.interfaces.dto.request.CreatePatientRequest;
 import com.meditrack.patient.interfaces.dto.request.UpdatePatientRequest;
 import com.meditrack.patient.interfaces.dto.response.PatientResponse;
@@ -11,6 +13,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Optional;
 import java.util.UUID;
 
 @RestController
@@ -39,4 +42,6 @@ public class PatientController {
         PatientResponse response = getPatientUseCase.getPatientById(id);
         return ResponseEntity.ok(response);
     }
+
+    
 }

@@ -16,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -31,6 +32,11 @@ public class PatientQueryService {
         return patientRepository.findById(new PatientId(id))
                 .map(ApplicationPatientMapper::toResponse)
                 .orElseThrow(() -> new PatientNotFoundException("Patient not found"));
+    }
+
+    @Cacheable(value = "patientSsn", key = "#ssn")
+    public Optional<Patient> getPatientBySSN(SSN ssn) {
+        return patientRepository.findBySsn(ssn);
     }
 
     @Cacheable(value = "patient_search", key = "#query")
