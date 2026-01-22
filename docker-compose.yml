@@ -1,0 +1,393 @@
+version: '3.8'
+
+services:
+  # ===========================
+  # Kafka Infrastructure
+  # ===========================
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: meditrack-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+      - zookeeper-logs:/var/lib/zookeeper/log
+    networks:
+      - meditrack-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: meditrack-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    networks:
+      - meditrack-network
+
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.5.0
+    container_name: meditrack-schema-registry
+    depends_on:
+      - kafka
+    ports:
+      - "8081:8081"
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:29092
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+    networks:
+      - meditrack-network
+
+  # ===========================
+  # Database Infrastructure
+  # ===========================
+  postgres:
+    image: postgres:15-alpine
+    container_name: meditrack-postgres
+    environment:
+      POSTGRES_USER: meditrack
+      POSTGRES_PASSWORD: meditrack_password
+      POSTGRES_DB: meditrack
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infrastructure/postgres/init-scripts:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U meditrack"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - meditrack-network
+
+  # ===========================
+  # Caching Infrastructure
+  # ===========================
+  redis:
+    image: redis:7.2-alpine
+    container_name: meditrack-redis
+    command: redis-server --requirepass meditrack_redis_password
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - meditrack-network
+
+  # ===========================
+  # Monitoring Infrastructure
+  # ===========================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: meditrack-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./monitoring/prometheus/alert-rules.yml:/etc/prometheus/alert-rules.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    networks:
+      - meditrack-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: meditrack-grafana
+    depends_on:
+      - prometheus
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_INSTALL_PLUGINS: grafana-clock-panel,grafana-piechart-panel
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+    networks:
+      - meditrack-network
+
+  # ===========================
+  # Distributed Tracing
+  # ===========================
+  jaeger:
+    image: jaegertracing/all-in-one:1.50
+    container_name: meditrack-jaeger
+    ports:
+      - "5775:5775/udp"   # zipkin.thrift compact
+      - "6831:6831/udp"   # jaeger.thrift compact
+      - "6832:6832/udp"   # jaeger.thrift binary
+      - "5778:5778"       # serve configs
+      - "16686:16686"     # UI
+      - "14268:14268"     # jaeger.thrift directly from clients
+      - "14250:14250"     # model.proto
+      - "9411:9411"       # zipkin compatible endpoint
+    environment:
+      COLLECTOR_ZIPKIN_HOST_PORT: ":9411"
+      COLLECTOR_OTLP_ENABLED: "true"
+    networks:
+      - meditrack-network
+
+  # ===========================
+  # Elasticsearch for Audit Logs
+  # ===========================
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: meditrack-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    networks:
+      - meditrack-network
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    container_name: meditrack-kibana
+    depends_on:
+      - elasticsearch
+    ports:
+      - "5601:5601"
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    networks:
+      - meditrack-network
+
+  # ===========================
+  # Identity & Access Management
+  # ===========================
+  keycloak:
+    image: quay.io/keycloak/keycloak:23.0
+    container_name: meditrack-keycloak
+    command: start-dev
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: meditrack
+      KC_DB_PASSWORD: meditrack_password
+      KC_HEALTH_ENABLED: "true"
+      KC_METRICS_ENABLED: "true"
+    ports:
+      - "8180:8080"
+    depends_on:
+      - postgres
+    networks:
+      - meditrack-network
+
+  # ===========================
+  # API Gateway
+  # ===========================
+  kong-database:
+    image: postgres:15-alpine
+    container_name: meditrack-kong-db
+    environment:
+      POSTGRES_USER: kong
+      POSTGRES_PASSWORD: kong_password
+      POSTGRES_DB: kong
+    volumes:
+      - kong-db-data:/var/lib/postgresql/data
+    networks:
+      - meditrack-network
+
+  kong-migrations:
+    image: kong:3.4
+    container_name: meditrack-kong-migrations
+    command: kong migrations bootstrap
+    environment:
+      KONG_DATABASE: postgres
+      KONG_PG_HOST: kong-database
+      KONG_PG_USER: kong
+      KONG_PG_PASSWORD: kong_password
+      KONG_PG_DATABASE: kong
+    depends_on:
+      - kong-database
+    networks:
+      - meditrack-network
+
+  kong:
+    image: kong:3.4
+    container_name: meditrack-kong
+    environment:
+      KONG_DATABASE: postgres
+      KONG_PG_HOST: kong-database
+      KONG_PG_USER: kong
+      KONG_PG_PASSWORD: kong_password
+      KONG_PG_DATABASE: kong
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: 0.0.0.0:8001
+      KONG_PROXY_LISTEN: 0.0.0.0:8000, 0.0.0.0:8443 ssl
+    depends_on:
+      - kong-database
+      - kong-migrations
+    ports:
+      - "8000:8000"   # Proxy HTTP
+      - "8443:8443"   # Proxy HTTPS
+      - "8001:8001"   # Admin API HTTP
+      - "8444:8444"   # Admin API HTTPS
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+    networks:
+      - meditrack-network
+
+  # ===========================
+  # MediTrack Services
+  # ===========================
+  patient-service:
+    build:
+      context: ./services/patient-service
+      dockerfile: Dockerfile
+    container_name: meditrack-patient-service
+    depends_on:
+      - kafka
+      - postgres
+      - redis
+      - schema-registry
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/patient_db
+      SPRING_DATASOURCE_USERNAME: meditrack
+      SPRING_DATASOURCE_PASSWORD: meditrack_password
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SPRING_KAFKA_PROPERTIES_SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      SPRING_REDIS_HOST: redis
+      SPRING_REDIS_PORT: 6379
+      SPRING_REDIS_PASSWORD: meditrack_redis_password
+      JWT_SECRET: ${JWT_SECRET:-your-secret-key-min-256-bits-for-hs256-algorithm}
+      MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: http://jaeger:9411/api/v2/spans
+      MANAGEMENT_TRACING_SAMPLING_PROBABILITY: 1.0
+    networks:
+      - meditrack-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8081/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  lab-service:
+    build:
+      context: ./services/labrotary-service
+      dockerfile: Dockerfile
+    container_name: meditrack-lab-service
+    depends_on:
+      - kafka
+      - postgres
+      - redis
+      - schema-registry
+    ports:
+      - "8082:8082"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SERVER_PORT: 8082
+      SPRING_APPLICATION_NAME: lab-service
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/lab_db
+      SPRING_DATASOURCE_USERNAME: meditrack
+      SPRING_DATASOURCE_PASSWORD: meditrack_password
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SPRING_KAFKA_PROPERTIES_SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      SPRING_REDIS_HOST: redis
+      SPRING_REDIS_PORT: 6379
+      SPRING_REDIS_PASSWORD: meditrack_redis_password
+      MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: http://jaeger:9411/api/v2/spans
+      MANAGEMENT_TRACING_SAMPLING_PROBABILITY: 1.0
+    networks:
+      - meditrack-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8082/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  insurance-service:
+    build:
+      context: ./services/insurance-service
+      dockerfile: Dockerfile
+    container_name: meditrack-insurance-service
+    depends_on:
+      - kafka
+      - postgres
+      - redis
+      - schema-registry
+    ports:
+      - "8083:8083"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SERVER_PORT: 8083
+      SPRING_APPLICATION_NAME: insurance-service
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/insurance_db
+      SPRING_DATASOURCE_USERNAME: meditrack
+      SPRING_DATASOURCE_PASSWORD: meditrack_password
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SPRING_KAFKA_PROPERTIES_SCHEMA_REGISTRY_URL: http://schema-registry:8081
+      SPRING_REDIS_HOST: redis
+      SPRING_REDIS_PORT: 6379
+      SPRING_REDIS_PASSWORD: meditrack_redis_password
+      MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: http://jaeger:9411/api/v2/spans
+      MANAGEMENT_TRACING_SAMPLING_PROBABILITY: 1.0
+    networks:
+      - meditrack-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8083/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  meditrack-network:
+    driver: bridge
+
+volumes:
+  zookeeper-data:
+  zookeeper-logs:
+  kafka-data:
+  postgres-data:
+  redis-data:
+  prometheus-data:
+  grafana-data:
+  elasticsearch-data:
+  kong-db-data:

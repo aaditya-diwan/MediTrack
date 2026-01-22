@@ -1,25 +1,25 @@
 server:
-  port: 8081
+  port: 8082
 
 spring:
   application:
-    name: patient-service
+    name: lab-service
 
   # ===========================
   # Database Configuration
   # ===========================
   datasource:
-    url: jdbc:h2:mem:patientdb  # Default for local without Docker
+    url: jdbc:h2:mem:lab_db
     driver-class-name: org.h2.Driver
     username: sa
-    password: password
+    password:
     hikari:
       maximum-pool-size: 20
       minimum-idle: 5
       connection-timeout: 30000
       idle-timeout: 600000
       max-lifetime: 1800000
-      pool-name: PatientServiceHikariCP
+      pool-name: LabServiceHikariCP
 
   jpa:
     database-platform: org.hibernate.dialect.H2Dialect
@@ -54,9 +54,9 @@ spring:
   kafka:
     bootstrap-servers: localhost:9092
     topics:
-      patient-events: patient-events
       lab-events: lab-events
-      audit-events: audit-events
+      patient-events: patient-events
+      insurance-events: insurance-events
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
@@ -84,7 +84,7 @@ spring:
   redis:
     host: localhost
     port: 6379
-    password: # Empty for local
+    password:
     timeout: 2000ms
     lettuce:
       pool:
@@ -95,18 +95,11 @@ spring:
 
   cache:
     type: redis
-    cache-names: patients, patient_search, medical_records, lab_orders
+    cache-names: lab_orders, lab_results, test_catalog
     redis:
-      time-to-live: 1h
+      time-to-live: 24h
       cache-null-values: false
       use-key-prefix: true
-
-# ===========================
-# JWT Configuration
-# ===========================
-jwt:
-  secret: your-very-long-and-secure-secret-key-that-is-at-least-256-bits-long
-  expiration: 86400 # 24 hours in seconds
 
 # ===========================
 # Actuator & Monitoring
@@ -144,7 +137,7 @@ management:
   # ===========================
   tracing:
     sampling:
-      probability: 1.0 # 100% for development, lower in production
+      probability: 1.0
   zipkin:
     tracing:
       endpoint: http://localhost:9411/api/v2/spans
@@ -188,7 +181,7 @@ spring:
     activate:
       on-profile: docker
   datasource:
-    url: jdbc:postgresql://postgres:5432/patient_db
+    url: jdbc:postgresql://postgres:5432/lab_db
     driver-class-name: org.postgresql.Driver
     username: meditrack
     password: meditrack_password
@@ -215,7 +208,7 @@ spring:
     activate:
       on-profile: prod
   datasource:
-    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/patient_db}
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/lab_db}
     driver-class-name: org.postgresql.Driver
     username: ${DATABASE_USERNAME:meditrack}
     password: ${DATABASE_PASSWORD}
@@ -234,13 +227,10 @@ spring:
     host: ${REDIS_HOST:localhost}
     password: ${REDIS_PASSWORD}
 
-jwt:
-  secret: ${JWT_SECRET}
-
 management:
   tracing:
     sampling:
-      probability: 0.1 # 10% in production
+      probability: 0.1
   zipkin:
     tracing:
       endpoint: ${JAEGER_ENDPOINT:http://localhost:9411/api/v2/spans}

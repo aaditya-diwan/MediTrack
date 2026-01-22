@@ -1,0 +1,287 @@
+# Prometheus Alert Rules for MediTrack Platform
+# Based on Technical Specification Section 6.4
+
+groups:
+  # ===========================
+  # Service Health Alerts
+  # ===========================
+  - name: service_health
+    interval: 30s
+    rules:
+      - alert: ServiceDown
+        expr: up{service_type="microservice"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: "Service {{ $labels.service }} is down"
+          description: "{{ $labels.service }} has been down for more than 1 minute"
+
+      - alert: ServiceHighMemoryUsage
+        expr: (jvm_memory_used_bytes{area="heap"} / jvm_memory_max_bytes{area="heap"}) > 0.85
+        for: 10m
+        labels:
+          severity: warning
+          category: resources
+        annotations:
+          summary: "High memory usage in {{ $labels.service }}"
+          description: "{{ $labels.service }} memory usage is {{ $value | humanizePercentage }}"
+
+      - alert: ServiceCriticalMemoryUsage
+        expr: (jvm_memory_used_bytes{area="heap"} / jvm_memory_max_bytes{area="heap"}) > 0.95
+        for: 5m
+        labels:
+          severity: critical
+          category: resources
+        annotations:
+          summary: "Critical memory usage in {{ $labels.service }}"
+          description: "{{ $labels.service }} memory usage is {{ $value | humanizePercentage }} - risk of OOM"
+
+  # ===========================
+  # Performance Alerts
+  # ===========================
+  - name: service_performance
+    interval: 30s
+    rules:
+      - alert: HighErrorRate
+        expr: rate(http_server_requests_seconds_count{status=~"5.."}[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          category: errors
+        annotations:
+          summary: "High error rate detected in {{ $labels.service }}"
+          description: "{{ $labels.service }} error rate is {{ $value }} errors/sec"
+
+      - alert: HighResponseTime
+        expr: histogram_quantile(0.95, rate(http_server_requests_seconds_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "High response time in {{ $labels.service }}"
+          description: "{{ $labels.service }} P95 response time is {{ $value }}s"
+
+      - alert: CriticalResponseTime
+        expr: histogram_quantile(0.95, rate(http_server_requests_seconds_bucket[5m])) > 3
+        for: 3m
+        labels:
+          severity: critical
+          category: performance
+        annotations:
+          summary: "Critical response time in {{ $labels.service }}"
+          description: "{{ $labels.service }} P95 response time is {{ $value }}s - patients may be impacted"
+
+  # ===========================
+  # Kafka Alerts
+  # ===========================
+  - name: kafka_alerts
+    interval: 60s
+    rules:
+      - alert: HighKafkaConsumerLag
+        expr: kafka_consumer_lag > 1000
+        for: 10m
+        labels:
+          severity: warning
+          category: messaging
+        annotations:
+          summary: "High Kafka consumer lag in {{ $labels.service }}"
+          description: "{{ $labels.service }} consumer lag is {{ $value }} messages"
+
+      - alert: CriticalKafkaConsumerLag
+        expr: kafka_consumer_lag > 5000
+        for: 5m
+        labels:
+          severity: critical
+          category: messaging
+        annotations:
+          summary: "Critical Kafka consumer lag in {{ $labels.service }}"
+          description: "{{ $labels.service }} consumer lag is {{ $value }} messages - event processing severely delayed"
+
+  # ===========================
+  # Database Alerts
+  # ===========================
+  - name: database_alerts
+    interval: 30s
+    rules:
+      - alert: DatabaseConnectionPoolExhaustion
+        expr: (jdbc_connections_active / jdbc_connections_max) > 0.8
+        for: 5m
+        labels:
+          severity: critical
+          category: database
+        annotations:
+          summary: "Database connection pool nearly exhausted in {{ $labels.service }}"
+          description: "{{ $labels.service }} connection pool usage is {{ $value | humanizePercentage }}"
+
+      - alert: DatabaseConnectionPoolCritical
+        expr: (jdbc_connections_active / jdbc_connections_max) > 0.95
+        for: 2m
+        labels:
+          severity: critical
+          category: database
+        annotations:
+          summary: "Database connection pool critical in {{ $labels.service }}"
+          description: "{{ $labels.service }} connection pool usage is {{ $value | humanizePercentage }} - service may become unresponsive"
+
+      - alert: SlowDatabaseQueries
+        expr: rate(hikaricp_connections_acquire_seconds_sum[5m]) / rate(hikaricp_connections_acquire_seconds_count[5m]) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          category: database
+        annotations:
+          summary: "Slow database queries in {{ $labels.service }}"
+          description: "{{ $labels.service }} average connection acquisition time is {{ $value }}s"
+
+  # ===========================
+  # Business Metrics Alerts
+  # ===========================
+  - name: business_metrics
+    interval: 60s
+    rules:
+      - alert: NoPatientRegistrations
+        expr: rate(meditrack_patient_registrations_total[15m]) == 0
+        for: 30m
+        labels:
+          severity: warning
+          category: business
+        annotations:
+          summary: "No patient registrations in the last 30 minutes"
+          description: "Patient service has not registered any patients - possible system issue or low traffic"
+
+      - alert: NoLabOrders
+        expr: rate(meditrack_lab_orders_created_total[15m]) == 0
+        for: 30m
+        labels:
+          severity: warning
+          category: business
+        annotations:
+          summary: "No lab orders in the last 30 minutes"
+          description: "Lab service has not received any orders - possible integration issue"
+
+      - alert: HighLabTurnaroundTime
+        expr: histogram_quantile(0.95, rate(meditrack_lab_turnaround_seconds_bucket[1h])) > 14400
+        for: 30m
+        labels:
+          severity: warning
+          category: business
+        annotations:
+          summary: "High lab turnaround time"
+          description: "P95 lab turnaround time is {{ $value | humanizeDuration }} - SLA at risk"
+
+      - alert: LowInsuranceApprovalRate
+        expr: meditrack_insurance_approval_rate < 0.85
+        for: 1h
+        labels:
+          severity: warning
+          category: business
+        annotations:
+          summary: "Low insurance approval rate"
+          description: "Insurance approval rate is {{ $value | humanizePercentage }} - below 85% target"
+
+  # ===========================
+  # Critical Results Alerts
+  # ===========================
+  - name: critical_results
+    interval: 30s
+    rules:
+      - alert: CriticalLabResultNotDelivered
+        expr: increase(meditrack_critical_results_total[5m]) > increase(meditrack_critical_results_delivered_total[5m])
+        for: 5m
+        labels:
+          severity: critical
+          category: patient_safety
+        annotations:
+          summary: "Critical lab results not delivered"
+          description: "Some critical lab results have not been delivered to providers - patient safety risk"
+
+  # ===========================
+  # System Resource Alerts
+  # ===========================
+  - name: system_resources
+    interval: 30s
+    rules:
+      - alert: HighCPUUsage
+        expr: system_cpu_usage > 0.8
+        for: 10m
+        labels:
+          severity: warning
+          category: resources
+        annotations:
+          summary: "High CPU usage in {{ $labels.service }}"
+          description: "{{ $labels.service }} CPU usage is {{ $value | humanizePercentage }}"
+
+      - alert: CriticalCPUUsage
+        expr: system_cpu_usage > 0.95
+        for: 5m
+        labels:
+          severity: critical
+          category: resources
+        annotations:
+          summary: "Critical CPU usage in {{ $labels.service }}"
+          description: "{{ $labels.service }} CPU usage is {{ $value | humanizePercentage }} - service may become unresponsive"
+
+      - alert: HighGCPressure
+        expr: rate(jvm_gc_pause_seconds_sum[5m]) / rate(jvm_gc_pause_seconds_count[5m]) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+          category: resources
+        annotations:
+          summary: "High GC pressure in {{ $labels.service }}"
+          description: "{{ $labels.service }} average GC pause time is {{ $value }}s"
+
+  # ===========================
+  # API Gateway Alerts
+  # ===========================
+  - name: api_gateway
+    interval: 30s
+    rules:
+      - alert: HighAPIGatewayErrorRate
+        expr: rate(kong_http_status{code=~"5.."}[5m]) / rate(kong_http_status[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          category: api_gateway
+        annotations:
+          summary: "High error rate at API Gateway"
+          description: "API Gateway error rate is {{ $value | humanizePercentage }}"
+
+      - alert: APIGatewayHighLatency
+        expr: histogram_quantile(0.95, rate(kong_latency_bucket[5m])) > 1000
+        for: 5m
+        labels:
+          severity: warning
+          category: api_gateway
+        annotations:
+          summary: "High latency at API Gateway"
+          description: "API Gateway P95 latency is {{ $value }}ms"
+
+  # ===========================
+  # Security Alerts
+  # ===========================
+  - name: security
+    interval: 30s
+    rules:
+      - alert: HighAuthenticationFailureRate
+        expr: rate(authentication_failures_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "High authentication failure rate"
+          description: "{{ $value }} authentication failures per second - possible brute force attack"
+
+      - alert: UnauthorizedAccessAttempts
+        expr: rate(http_server_requests_seconds_count{status="403"}[5m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "High rate of unauthorized access attempts"
+          description: "{{ $value }} unauthorized access attempts per second in {{ $labels.service }}"
