@@ -1,14 +1,12 @@
 package com.meditrack.labrotary_service.infrastructure.messaging.consumer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.meditrack.labrotary_service.application.dto.DiagnosisCodeDto;
 import com.meditrack.labrotary_service.application.dto.LabOrderRequest;
 import com.meditrack.labrotary_service.application.dto.TestInfoDto;
 import com.meditrack.labrotary_service.application.service.LabOrderApplicationService;
 import com.meditrack.labrotary_service.domain.model.Priority;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import com.meditrack.labrotary_service.infrastructure.messaging.event.EventTopics;
+import com.meditrack.labrotary_service.infrastructure.messaging.event.LabTestOrderedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -17,8 +15,6 @@ import org.springframework.stereotype.Component;
 
 import java.time.OffsetDateTime;
 import java.util.Collections;
-import java.util.List;
-import java.util.UUID;
 
 /**
  * Kafka consumer that listens to patient lab order events
@@ -51,8 +47,8 @@ public class LabOrderEventConsumer {
             // Parse the event
             LabTestOrderedEvent event = objectMapper.readValue(eventJson, LabTestOrderedEvent.class);
 
-            // Only process lab.test.ordered.v1 events
-            if ("lab.test.ordered.v1".equals(event.getEventType())) {
+            // Only process lab order events; ignore anything else on this topic
+            if (EventTopics.PATIENT_EVENTS_CONSUMER_TYPE.equals(event.getEventType())) {
                 processLabOrderEvent(event);
 
                 // Manually acknowledge successful processing
@@ -123,41 +119,4 @@ public class LabOrderEventConsumer {
         }
     }
 
-    // ==========================================
-    // Event DTOs - Mirror patient service events
-    // ==========================================
-
-    @Data
-    @NoArgsConstructor
-    @AllArgsConstructor
-    public static class LabTestOrderedEvent {
-        private UUID eventId;
-        private String eventType;
-        private long timestamp;
-        private String source;
-        private Order order;
-        private PatientSnapshot patientSnapshot;
-
-        @Data
-        @NoArgsConstructor
-        @AllArgsConstructor
-        public static class Order {
-            private UUID orderId;
-            private String patientId;
-            private String doctorId;
-            private String testCode;
-            private String priority;
-            private String notes;
-        }
-
-        @Data
-        @NoArgsConstructor
-        @AllArgsConstructor
-        public static class PatientSnapshot {
-            private String mrn;
-            private String firstName;
-            private String lastName;
-            private String dateOfBirth;
-        }
-    }
 }

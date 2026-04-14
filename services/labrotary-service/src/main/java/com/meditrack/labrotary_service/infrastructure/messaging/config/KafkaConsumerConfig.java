@@ -12,9 +12,12 @@ import org.springframework.kafka.annotation.EnableKafka;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.listener.ContainerProperties;
-import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
+import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
+import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.support.serializer.JsonDeserializer;
+import org.springframework.util.backoff.ExponentialBackOff;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -87,19 +90,38 @@ public class KafkaConsumerConfig {
     }
 
     /**
+     * Dead-letter + exponential-backoff error handler.
+     *
+     * On repeated failures a message is forwarded to a Dead Letter Topic (DLT)
+     * named "<original-topic>.DLT". Retry schedule: 1s → 2s → 4s → 8s → 16s (5 attempts).
+     * After all retries are exhausted the message is sent to the DLT and the offset is committed.
+     */
+    @Bean
+    public DefaultErrorHandler errorHandler(KafkaTemplate<Object, Object> kafkaTemplate) {
+        DeadLetterPublishingRecoverer recoverer = new DeadLetterPublishingRecoverer(kafkaTemplate);
+
+        ExponentialBackOff backOff = new ExponentialBackOff(1_000L, 2.0);
+        backOff.setMaxAttempts(5);
+
+        return new DefaultErrorHandler(recoverer, backOff);
+    }
+
+    /**
      * Kafka Listener Container Factory
      *
      * Configured with:
      * - Manual acknowledgment mode
-     * - Error handling
-     * - Batch processing disabled for immediate processing
+     * - Dead-letter queue + exponential-backoff error handler
+     * - Concurrent consumers (scale with partition count)
      */
     @Bean
-    public ConcurrentKafkaListenerContainerFactory<String, String> kafkaListenerContainerFactory() {
+    public ConcurrentKafkaListenerContainerFactory<String, String> kafkaListenerContainerFactory(
+            DefaultErrorHandler errorHandler) {
         ConcurrentKafkaListenerContainerFactory<String, String> factory =
             new ConcurrentKafkaListenerContainerFactory<>();
 
         factory.setConsumerFactory(consumerFactory());
+        factory.setCommonErrorHandler(errorHandler);
 
         // Enable manual acknowledgment
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL);

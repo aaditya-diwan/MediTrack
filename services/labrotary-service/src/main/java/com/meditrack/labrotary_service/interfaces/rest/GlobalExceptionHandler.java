@@ -1,13 +1,11 @@
-package com.meditrack.patient.interfaces.rest;
+package com.meditrack.labrotary_service.interfaces.rest;
 
-import com.meditrack.patient.application.exception.DuplicatePatientException;
-import com.meditrack.patient.application.exception.MedicalRecordNotFoundException;
-import com.meditrack.patient.application.exception.PatientNotFoundException;
-import com.meditrack.patient.application.exception.ResourceNotFoundException;
+import com.meditrack.labrotary_service.application.exception.LabOrderNotFoundException;
+import com.meditrack.labrotary_service.application.exception.LabResultNotFoundException;
+import com.meditrack.labrotary_service.application.exception.LabServiceException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -22,34 +20,16 @@ import java.util.stream.Collectors;
 @ControllerAdvice
 public class GlobalExceptionHandler {
 
-    @ExceptionHandler(ResourceNotFoundException.class)
-    public ResponseEntity<Object> handleResourceNotFoundException(ResourceNotFoundException ex, WebRequest request) {
+    @ExceptionHandler({LabOrderNotFoundException.class, LabResultNotFoundException.class})
+    public ResponseEntity<Object> handleNotFound(LabServiceException ex, WebRequest request) {
         log.warn("Resource not found: {} [path={}]", ex.getMessage(), request.getDescription(false));
         return buildResponse(HttpStatus.NOT_FOUND, "Not Found", ex.getMessage(), request);
     }
 
-    @ExceptionHandler(PatientNotFoundException.class)
-    public ResponseEntity<Object> handlePatientNotFoundException(PatientNotFoundException ex, WebRequest request) {
-        log.warn("Patient not found: {} [path={}]", ex.getMessage(), request.getDescription(false));
-        return buildResponse(HttpStatus.NOT_FOUND, "Not Found", ex.getMessage(), request);
-    }
-
-    @ExceptionHandler(MedicalRecordNotFoundException.class)
-    public ResponseEntity<Object> handleMedicalRecordNotFoundException(MedicalRecordNotFoundException ex, WebRequest request) {
-        log.warn("Medical record not found: {} [path={}]", ex.getMessage(), request.getDescription(false));
-        return buildResponse(HttpStatus.NOT_FOUND, "Not Found", ex.getMessage(), request);
-    }
-
-    @ExceptionHandler(DuplicatePatientException.class)
-    public ResponseEntity<Object> handleDuplicatePatientException(DuplicatePatientException ex, WebRequest request) {
-        log.warn("Duplicate patient: {} [path={}]", ex.getMessage(), request.getDescription(false));
-        return buildResponse(HttpStatus.CONFLICT, "Conflict", ex.getMessage(), request);
-    }
-
-    @ExceptionHandler(BadCredentialsException.class)
-    public ResponseEntity<Object> handleBadCredentialsException(BadCredentialsException ex, WebRequest request) {
-        // Do not log the exception itself — invalid credentials are not an application error
-        return buildResponse(HttpStatus.UNAUTHORIZED, "Unauthorized", "Invalid username or password", request);
+    @ExceptionHandler(LabServiceException.class)
+    public ResponseEntity<Object> handleLabServiceException(LabServiceException ex, WebRequest request) {
+        log.error("Lab service error [path={}]", request.getDescription(false), ex);
+        return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, "Lab Service Error", ex.getMessage(), request);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

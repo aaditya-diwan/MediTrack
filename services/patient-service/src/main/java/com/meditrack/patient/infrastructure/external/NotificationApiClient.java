@@ -1,39 +1,26 @@
 package com.meditrack.patient.infrastructure.external;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+@Slf4j
 @Component
 public class NotificationApiClient {
-    // This is a more realistic stub for an external API client.
-    // An actual implementation would use RestTemplate or WebClient to send notifications (e.g., email, SMS).
+    // Stub — replace with RestTemplate/WebClient call to the real notification service.
     public void sendNotification(String patientId, String message) {
-        System.out.println("Simulating external call: Sending notification to patient " + patientId + ": " + message);
-        // Simulate network delay
-        try {
-            Thread.sleep(200);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-        System.out.println("Notification sent successfully.");
+        log.info("Stub: sending notification [patientId={}, message={}]", patientId, message);
+        log.debug("Stub: notification dispatched successfully [patientId={}]", patientId);
     }
 
     public void sendEmail(String recipientEmail, String subject, String body) {
-        System.out.println("Simulating external call: Sending email to " + recipientEmail + " with subject: " + subject);
-        try {
-            Thread.sleep(200);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-        System.out.println("Email sent successfully.");
+        // Do not log body — may contain PHI
+        log.info("Stub: sending email [recipient={}, subject={}]", recipientEmail, subject);
+        log.debug("Stub: email dispatched successfully [recipient={}]", recipientEmail);
     }
 
     public void sendSms(String phoneNumber, String message) {
-        System.out.println("Simulating external call: Sending SMS to " + phoneNumber + ": " + message);
-        try {
-            Thread.sleep(200);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-        System.out.println("SMS sent successfully.");
+        // Do not log phoneNumber at INFO level — PII
+        log.info("Stub: sending SMS notification");
+        log.debug("Stub: SMS dispatched successfully [phoneNumber={}]", phoneNumber);
     }
 }

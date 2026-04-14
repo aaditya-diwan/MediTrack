@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs grep *)",
+      "Bash(find /d/Github/MediTrack/services -name \"*.java\" -type f -exec grep -l \"throw new Exception\\\\|catch \\(Exception\" {} \\\\;)",
+      "Bash(xargs cat *)"
+    ]
+  }
+}

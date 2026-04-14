@@ -1,47 +1,48 @@
 package com.meditrack.patient.infrastructure.messaging;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class PatientEventProducer {
-    // This is a more realistic stub for a Kafka producer.
-    // An actual implementation would use KafkaTemplate to send messages.
 
-    private static final String PATIENT_CREATED_TOPIC = "patient.created.v1";
+    private static final String PATIENT_CREATED_TOPIC = EventTopics.PATIENT_CREATED;
+    private static final String PATIENT_UPDATED_TOPIC = EventTopics.PATIENT_UPDATED;
+    private static final String PATIENT_DELETED_TOPIC = EventTopics.PATIENT_DELETED;
+
     private final KafkaTemplate<String, Object> kafkaTemplate;
+
     public void sendPatientCreatedEvent(String patientId) {
-        System.out.println("Simulating Kafka event: Sending patient created event for ID: " + patientId);
-        // Simulate message sending delay
+        log.info("Publishing patient-created event [patientId={}, topic={}]", patientId, PATIENT_CREATED_TOPIC);
         try {
             kafkaTemplate.send(PATIENT_CREATED_TOPIC, patientId, patientId);
+            log.debug("Patient-created event published successfully [patientId={}]", patientId);
         } catch (Exception e) {
-            System.out.println("Error sending kafka message");
+            log.error("Failed to publish patient-created event [patientId={}]", patientId, e);
         }
-        System.out.println("Patient created event sent.");
     }
 
     public void sendPatientUpdatedEvent(String patientId) {
-        System.out.println("Simulating Kafka event: Sending patient updated event for ID: " + patientId);
+        log.info("Publishing patient-updated event [patientId={}, topic={}]", patientId, PATIENT_UPDATED_TOPIC);
         try {
-            Thread.sleep(100);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+            kafkaTemplate.send(PATIENT_UPDATED_TOPIC, patientId, patientId);
+            log.debug("Patient-updated event published successfully [patientId={}]", patientId);
+        } catch (Exception e) {
+            log.error("Failed to publish patient-updated event [patientId={}]", patientId, e);
         }
-        System.out.println("Patient updated event sent.");
     }
 
     public void sendPatientDeletedEvent(String patientId) {
-        System.out.println("Simulating Kafka event: Sending patient deleted event for ID: " + patientId);
+        log.info("Publishing patient-deleted event [patientId={}, topic={}]", patientId, PATIENT_DELETED_TOPIC);
         try {
-            Thread.sleep(100);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+            kafkaTemplate.send(PATIENT_DELETED_TOPIC, patientId, patientId);
+            log.debug("Patient-deleted event published successfully [patientId={}]", patientId);
+        } catch (Exception e) {
+            log.error("Failed to publish patient-deleted event [patientId={}]", patientId, e);
         }
-        System.out.println("Patient deleted event sent.");
     }
-
-    
 }

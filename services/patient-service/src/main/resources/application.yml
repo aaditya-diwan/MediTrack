@@ -105,7 +105,7 @@ spring:
 # JWT Configuration
 # ===========================
 jwt:
-  secret: your-very-long-and-secure-secret-key-that-is-at-least-256-bits-long
+  secret: ${JWT_SECRET:your-very-long-and-secure-secret-key-that-is-at-least-256-bits-long-local-only}
   expiration: 86400 # 24 hours in seconds
 
 # ===========================
@@ -190,8 +190,8 @@ spring:
   datasource:
     url: jdbc:postgresql://postgres:5432/patient_db
     driver-class-name: org.postgresql.Driver
-    username: meditrack
-    password: meditrack_password
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
   jpa:
     database-platform: org.hibernate.dialect.PostgreSQLDialect
   h2:
@@ -201,7 +201,7 @@ spring:
     bootstrap-servers: kafka:29092
   redis:
     host: redis
-    password: meditrack_redis_password
+    password: ${SPRING_REDIS_PASSWORD}
 
 management:
   zipkin:

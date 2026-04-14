@@ -4,6 +4,7 @@ import com.meditrack.patient.application.service.MedicalRecordApplicationService
 import com.meditrack.patient.interfaces.dto.request.CreateMedicalRecordRequest;
 import com.meditrack.patient.interfaces.dto.request.UpdateMedicalRecordRequest;
 import com.meditrack.patient.interfaces.dto.response.MedicalRecordResponse;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -20,13 +21,13 @@ public class MedicalRecordController {
     private final MedicalRecordApplicationService medicalRecordApplicationService;
 
     @PostMapping
-    public ResponseEntity<MedicalRecordResponse> createMedicalRecord(@RequestBody CreateMedicalRecordRequest request) {
+    public ResponseEntity<MedicalRecordResponse> createMedicalRecord(@Valid @RequestBody CreateMedicalRecordRequest request) {
         MedicalRecordResponse response = medicalRecordApplicationService.createMedicalRecord(request);
         return new ResponseEntity<>(response, HttpStatus.CREATED);
     }
 
     @PutMapping("/{recordId}")
-    public ResponseEntity<MedicalRecordResponse> updateMedicalRecord(@PathVariable String recordId, @RequestBody UpdateMedicalRecordRequest request) {
+    public ResponseEntity<MedicalRecordResponse> updateMedicalRecord(@PathVariable String recordId, @Valid @RequestBody UpdateMedicalRecordRequest request) {
         MedicalRecordResponse response = medicalRecordApplicationService.updateMedicalRecord(recordId, request);
         return ResponseEntity.ok(response);
     }

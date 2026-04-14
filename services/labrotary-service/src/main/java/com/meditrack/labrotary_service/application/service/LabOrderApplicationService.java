@@ -7,6 +7,7 @@ import com.meditrack.labrotary_service.application.usecase.CreateLabOrderUseCase
 import com.meditrack.labrotary_service.domain.model.LabOrder;
 import com.meditrack.labrotary_service.domain.repository.LabOrderRepository;
 import com.meditrack.labrotary_service.infrastructure.messaging.LabOrderEventPublisher;
+import com.meditrack.labrotary_service.infrastructure.messaging.event.EventTopics;
 import com.meditrack.labrotary_service.infrastructure.messaging.event.LabOrderEvent;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -28,7 +29,7 @@ public class LabOrderApplicationService implements CreateLabOrderUseCase {
 
         LabOrder savedOrder = labOrderRepository.save(labOrder);
 
-        LabOrderEvent event = new LabOrderEvent(savedOrder.getId(), savedOrder.getPatientId(), "lab.test.ordered.v1");
+        LabOrderEvent event = new LabOrderEvent(savedOrder.getId(), savedOrder.getPatientId(), EventTopics.EVENT_TYPE_LAB_ORDER_CREATED);
         eventPublisher.publishLabOrderCreatedEvent(event);
 
         return new LabOrderResponse(savedOrder.getId());

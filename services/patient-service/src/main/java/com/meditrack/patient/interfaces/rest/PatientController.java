@@ -8,6 +8,7 @@ import com.meditrack.patient.domain.model.valueobjects.SSN;
 import com.meditrack.patient.interfaces.dto.request.CreatePatientRequest;
 import com.meditrack.patient.interfaces.dto.request.UpdatePatientRequest;
 import com.meditrack.patient.interfaces.dto.response.PatientResponse;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -26,13 +27,13 @@ public class PatientController {
     private final GetPatientUseCase getPatientUseCase;
 
     @PostMapping
-    public ResponseEntity<PatientResponse> createPatient(@RequestBody CreatePatientRequest request) {
+    public ResponseEntity<PatientResponse> createPatient(@Valid @RequestBody CreatePatientRequest request) {
         PatientResponse response = createPatientUseCase.createPatient(request);
         return new ResponseEntity<>(response, HttpStatus.CREATED);
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<PatientResponse> updatePatient(@PathVariable UUID id, @RequestBody UpdatePatientRequest request) {
+    public ResponseEntity<PatientResponse> updatePatient(@PathVariable UUID id, @Valid @RequestBody UpdatePatientRequest request) {
         PatientResponse response = updatePatientUseCase.updatePatient(id, request);
         return ResponseEntity.ok(response);
     }

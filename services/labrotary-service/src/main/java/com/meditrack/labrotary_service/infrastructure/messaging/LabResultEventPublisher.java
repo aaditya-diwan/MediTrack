@@ -2,6 +2,7 @@ package com.meditrack.labrotary_service.infrastructure.messaging;
 
 import com.meditrack.labrotary_service.domain.model.LabOrder;
 import com.meditrack.labrotary_service.domain.model.LabResult;
+import com.meditrack.labrotary_service.infrastructure.messaging.event.EventTopics;
 import com.meditrack.labrotary_service.infrastructure.messaging.event.LabResultsAvailableEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,7 +40,7 @@ public class LabResultEventPublisher {
             // Build the event
             LabResultsAvailableEvent event = LabResultsAvailableEvent.builder()
                 .eventId(UUID.randomUUID())
-                .eventType("lab.results.available.v1")
+                .eventType(EventTopics.EVENT_TYPE_LAB_RESULTS_AVAILABLE)
                 .timestamp(Instant.now().toEpochMilli())
                 .source("lab-service")
                 .order(buildOrderInfo(order))
@@ -70,7 +71,7 @@ public class LabResultEventPublisher {
         try {
             LabResultsAvailableEvent event = LabResultsAvailableEvent.builder()
                 .eventId(UUID.randomUUID())
-                .eventType("lab.critical.result.v1")
+                .eventType(EventTopics.EVENT_TYPE_LAB_CRITICAL_RESULT)
                 .timestamp(Instant.now().toEpochMilli())
                 .source("lab-service")
                 .order(buildOrderInfo(order))
