@@ -1,25 +1,40 @@
 package com.meditrack.labrotary_service.application.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.meditrack.labrotary_service.application.dto.LabOrderRequest;
 import com.meditrack.labrotary_service.application.dto.LabOrderResponse;
 import com.meditrack.labrotary_service.application.mapper.LabOrderMapper;
 import com.meditrack.labrotary_service.application.usecase.CreateLabOrderUseCase;
 import com.meditrack.labrotary_service.domain.model.LabOrder;
 import com.meditrack.labrotary_service.domain.repository.LabOrderRepository;
-import com.meditrack.labrotary_service.infrastructure.messaging.LabOrderEventPublisher;
 import com.meditrack.labrotary_service.infrastructure.messaging.event.EventTopics;
 import com.meditrack.labrotary_service.infrastructure.messaging.event.LabOrderEvent;
+import com.meditrack.labrotary_service.infrastructure.outbox.OutboxEvent;
+import com.meditrack.labrotary_service.infrastructure.outbox.OutboxEventRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.UUID;
+
+/**
+ * Creates a lab order and writes a corresponding outbox event in the same transaction.
+ *
+ * The {@link com.meditrack.labrotary_service.infrastructure.outbox.OutboxRelay} picks up
+ * PENDING outbox events and publishes them to Kafka, guaranteeing at-least-once delivery
+ * even if Kafka is temporarily unavailable at order-creation time.
+ */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class LabOrderApplicationService implements CreateLabOrderUseCase {
 
     private final LabOrderRepository labOrderRepository;
     private final LabOrderMapper labOrderMapper;
-    private final LabOrderEventPublisher eventPublisher;
+    private final OutboxEventRepository outboxEventRepository;
+    private final ObjectMapper objectMapper;
 
     @Transactional
     @Override
@@ -28,10 +43,36 @@ public class LabOrderApplicationService implements CreateLabOrderUseCase {
         labOrder.initialize();
 
         LabOrder savedOrder = labOrderRepository.save(labOrder);
+        log.info("Lab order created [orderId={}]", savedOrder.getId());
 
-        LabOrderEvent event = new LabOrderEvent(savedOrder.getId(), savedOrder.getPatientId(), EventTopics.EVENT_TYPE_LAB_ORDER_CREATED);
-        eventPublisher.publishLabOrderCreatedEvent(event);
+        // Write event to outbox within the same transaction — Kafka publish happens async via OutboxRelay
+        writeToOutbox(savedOrder);
 
         return new LabOrderResponse(savedOrder.getId());
+    }
+
+    private void writeToOutbox(LabOrder order) {
+        LabOrderEvent event = new LabOrderEvent(
+                order.getId(),
+                order.getPatientId(),
+                EventTopics.EVENT_TYPE_LAB_ORDER_CREATED);
+
+        String payload;
+        try {
+            payload = objectMapper.writeValueAsString(event);
+        } catch (JsonProcessingException e) {
+            // Should never happen for a simple POJO; if it does we want the transaction to roll back
+            throw new RuntimeException("Failed to serialize LabOrderEvent [orderId=" + order.getId() + "]", e);
+        }
+
+        OutboxEvent outboxEvent = new OutboxEvent();
+        outboxEvent.setId(UUID.randomUUID());
+        outboxEvent.setTopic(EventTopics.LAB_ORDER_CREATED);
+        outboxEvent.setAggregateId(order.getId().toString());
+        outboxEvent.setEventType(EventTopics.EVENT_TYPE_LAB_ORDER_CREATED);
+        outboxEvent.setPayload(payload);
+
+        outboxEventRepository.save(outboxEvent);
+        log.debug("Outbox event written [outboxId={}, orderId={}]", outboxEvent.getId(), order.getId());
     }
 }

@@ -1,6 +1,7 @@
 package com.meditrack.patient.interfaces.rest;
 
 import com.meditrack.patient.infrastructure.security.JwtUtil;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -25,7 +26,7 @@ public class AuthenticationController {
     private final JwtUtil jwtUtil;
 
     @PostMapping("/authenticate")
-    public ResponseEntity<?> createAuthenticationToken(@RequestBody AuthenticationRequest authenticationRequest) {
+    public ResponseEntity<AuthenticationResponse> createAuthenticationToken(@Valid @RequestBody AuthenticationRequest authenticationRequest) {
         try {
             authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(
@@ -43,38 +44,5 @@ public class AuthenticationController {
         log.info("Authentication successful [username={}]", authenticationRequest.getUsername());
 
         return ResponseEntity.ok(new AuthenticationResponse(jwt));
-    }
-}
-
-class AuthenticationRequest {
-    private String username;
-    private String password;
-
-    public String getUsername() {
-        return username;
-    }
-
-    public void setUsername(String username) {
-        this.username = username;
-    }
-
-    public String getPassword() {
-        return password;
-    }
-
-    public void setPassword(String password) {
-        this.password = password;
-    }
-}
-
-class AuthenticationResponse {
-    private final String jwt;
-
-    public AuthenticationResponse(String jwt) {
-        this.jwt = jwt;
-    }
-
-    public String getJwt() {
-        return jwt;
     }
 }

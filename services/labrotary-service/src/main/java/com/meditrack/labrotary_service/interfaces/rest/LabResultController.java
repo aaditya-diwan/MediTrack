@@ -78,15 +78,19 @@ public class LabResultController {
     }
 
     /**
-     * Get all critical results
+     * Get critical results.
      *
-     * GET /api/v1/lab/results/critical
+     * GET /api/v1/lab/results/critical?limit=100
+     *
+     * @param limit max records to return (1–500, default 100)
      */
     @GetMapping("/critical")
-    public ResponseEntity<List<LabResultResponse>> getCriticalResults() {
-        log.info("Received request to get all critical results");
+    public ResponseEntity<List<LabResultResponse>> getCriticalResults(
+            @RequestParam(defaultValue = "100") int limit) {
 
-        List<LabResultResponse> results = labResultService.getCriticalResults();
+        log.info("Received request to get critical results [limit={}]", limit);
+
+        List<LabResultResponse> results = labResultService.getCriticalResults(limit);
 
         return ResponseEntity.ok(results);
     }

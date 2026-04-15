@@ -8,12 +8,14 @@ import com.meditrack.patient.events.LabTestOrderedEvent;
 import com.meditrack.patient.interfaces.dtos.OrderLabTestRequest;
 import com.meditrack.patient.messaging.LabOrderEventPublisher;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.ZoneOffset;
 import java.util.UUID;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/v1/patients/{ssn}/order-labs")
 @RequiredArgsConstructor
@@ -23,7 +25,9 @@ public class PatientLabOrderController {
     private final LabOrderEventPublisher labOrderEventPublisher;
 
     @PostMapping
-    public ResponseEntity<String> orderLabTest(@PathVariable String ssn, @RequestBody OrderLabTestRequest request) throws JsonProcessingException {
+    public ResponseEntity<String> orderLabTest(@PathVariable String ssn,
+                                               @RequestBody OrderLabTestRequest request) throws JsonProcessingException {
+        // Note: routing by SSN in the URL exposes PHI — TODO: switch to patientId or MRN
         Patient patient = patientRepository.findBySsn(new SSN(ssn))
                 .orElseThrow(() -> new RuntimeException("Patient not found"));
 

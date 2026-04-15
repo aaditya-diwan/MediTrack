@@ -87,7 +87,7 @@ public class LabOrderEventConsumer {
         // Convert test code to test info
         TestInfoDto testInfo = new TestInfoDto();
         testInfo.setTestCode(orderData.getTestCode());
-        testInfo.setNotes(orderData.getNotes());
+        testInfo.setClinicalNotes(orderData.getNotes());
         request.setTests(Collections.singletonList(testInfo));
 
         // For now, we don't have diagnosis codes in the event

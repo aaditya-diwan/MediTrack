@@ -1,5 +1,6 @@
 package com.meditrack.insurance_service.interfaces.rest;
 
+import com.meditrack.insurance_service.application.exception.DuplicatePolicyException;
 import com.meditrack.insurance_service.application.exception.InsuranceServiceException;
 import com.meditrack.insurance_service.application.exception.PolicyNotFoundException;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +19,12 @@ import java.util.stream.Collectors;
 @Slf4j
 @ControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(DuplicatePolicyException.class)
+    public ResponseEntity<Object> handleDuplicatePolicy(DuplicatePolicyException ex, WebRequest request) {
+        log.warn("Duplicate policy [path={}]: {}", request.getDescription(false), ex.getMessage());
+        return buildResponse(HttpStatus.CONFLICT, "Conflict", ex.getMessage(), request);
+    }
 
     @ExceptionHandler(PolicyNotFoundException.class)
     public ResponseEntity<Object> handlePolicyNotFound(PolicyNotFoundException ex, WebRequest request) {

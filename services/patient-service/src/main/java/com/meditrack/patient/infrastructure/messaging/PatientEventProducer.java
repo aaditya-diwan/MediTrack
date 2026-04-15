@@ -45,4 +45,21 @@ public class PatientEventProducer {
             log.error("Failed to publish patient-deleted event [patientId={}]", patientId, e);
         }
     }
+
+    /**
+     * Publishes a structured {@link LabTestOrderedPayload} to the {@code patient-events} topic.
+     * The lab-service consumes this to create a corresponding LabOrder.
+     *
+     * Call this from the use case / service layer when a physician orders a lab test for a patient.
+     */
+    public void sendLabTestOrderedEvent(LabTestOrderedPayload payload) {
+        log.info("Publishing lab-test-ordered event [orderId={}, patientId={}, topic={}]",
+                payload.getOrder().getOrderId(), payload.getOrder().getPatientId(), EventTopics.PATIENT_EVENTS);
+        try {
+            kafkaTemplate.send(EventTopics.PATIENT_EVENTS, payload.getOrder().getPatientId(), payload);
+            log.debug("Lab-test-ordered event published successfully [orderId={}]", payload.getOrder().getOrderId());
+        } catch (Exception e) {
+            log.error("Failed to publish lab-test-ordered event [orderId={}]", payload.getOrder().getOrderId(), e);
+        }
+    }
 }

@@ -2,6 +2,8 @@ package com.meditrack.labrotary_service.application.service;
 
 import com.meditrack.labrotary_service.application.dto.LabResultRequest;
 import com.meditrack.labrotary_service.application.dto.LabResultResponse;
+import com.meditrack.labrotary_service.application.exception.LabOrderNotFoundException;
+import com.meditrack.labrotary_service.application.exception.LabResultNotFoundException;
 import com.meditrack.labrotary_service.application.mapper.LabResultMapper;
 import com.meditrack.labrotary_service.application.usecase.SubmitLabResultUseCase;
 import com.meditrack.labrotary_service.domain.model.LabOrder;
@@ -49,7 +51,7 @@ public class LabResultApplicationService {
 
         // Get the order for event publishing
         LabOrder order = labOrderRepository.findById(request.getOrderId())
-            .orElseThrow(() -> new IllegalArgumentException("Order not found"));
+            .orElseThrow(() -> new LabOrderNotFoundException(request.getOrderId()));
 
         // Publish event if critical
         if (savedResult.isCritical()) {
@@ -76,7 +78,7 @@ public class LabResultApplicationService {
         log.debug("Getting lab result: {}", resultId);
 
         LabResult result = labResultRepository.findById(resultId)
-            .orElseThrow(() -> new IllegalArgumentException("Result not found: " + resultId));
+            .orElseThrow(() -> new LabResultNotFoundException(resultId));
 
         return mapper.toResponse(result);
     }
@@ -96,14 +98,23 @@ public class LabResultApplicationService {
     }
 
     /**
-     * Get all critical results
+     * Get critical results — capped at {@code limit} records (max 500).
+     * TODO: replace with proper cursor-based pagination once LabResultRepository supports it.
      */
-    public List<LabResultResponse> getCriticalResults() {
-        log.debug("Getting all critical results");
+    public List<LabResultResponse> getCriticalResults(int limit) {
+        if (limit < 1 || limit > 500) {
+            throw new IllegalArgumentException("limit must be between 1 and 500");
+        }
+        log.debug("Getting critical results [limit={}]", limit);
 
         List<LabResult> results = labResultRepository.findCriticalResults();
 
+        if (results.size() > limit) {
+            log.warn("Critical results truncated: found={}, returning={} — add cursor pagination", results.size(), limit);
+        }
+
         return results.stream()
+            .limit(limit)
             .map(mapper::toResponse)
             .collect(Collectors.toList());
     }

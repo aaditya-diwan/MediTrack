@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-patient-service:
+    name: Patient Service — Build & Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/patient-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build & test
+        run: mvn -B verify
+
+      - name: OWASP dependency check
+        run: mvn -B org.owasp:dependency-check-maven:check
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+
+  build-lab-service:
+    name: Lab Service — Build & Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/labrotary-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build & test
+        run: mvn -B verify
+
+      - name: OWASP dependency check
+        run: mvn -B org.owasp:dependency-check-maven:check
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+
+  build-insurance-service:
+    name: Insurance Service — Build & Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/insurance-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build & test
+        run: mvn -B verify
+
+      - name: OWASP dependency check
+        run: mvn -B org.owasp:dependency-check-maven:check
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
