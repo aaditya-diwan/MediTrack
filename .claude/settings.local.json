@@ -3,7 +3,21 @@
     "allow": [
       "Bash(xargs grep *)",
       "Bash(find /d/Github/MediTrack/services -name \"*.java\" -type f -exec grep -l \"throw new Exception\\\\|catch \\(Exception\" {} \\\\;)",
-      "Bash(xargs cat *)"
+      "Bash(xargs cat *)",
+      "Bash(npx create-next-app@latest meditrack-ui --typescript --tailwind --eslint --app --src-dir --import-alias \"@/*\" --use-npm)",
+      "Bash(npm install *)",
+      "Bash(npx tsc *)",
+      "Bash(npm run *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/login)",
+      "Bash(pkill -f \"next dev\")",
+      "Bash(netstat -ano)",
+      "Bash(taskkill /PID 31336 /F)",
+      "Bash(cmd *)",
+      "Bash(curl -s http://localhost:3000/login)",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:3000/api/auth/login -H 'Content-Type: application/json' -d '{\"username\":\"test\",\"password\":\"wrong\"}')",
+      "Bash(curl -s -X POST http://localhost:3000/api/auth/login -H 'Content-Type: application/json' -d '{\"username\":\"test\",\"password\":\"wrong\"}')",
+      "Bash(curl -v -X POST http://localhost:3000/api/auth/login -H 'Content-Type: application/json' -d '{\"username\":\"test\",\"password\":\"wrong\"}')",
+      "Bash(curl -s -I http://localhost:3000/patients)"
     ]
   }
 }

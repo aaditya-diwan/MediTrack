@@ -13,7 +13,9 @@ import com.meditrack.patient.domain.repository.PatientRepository;
 import com.meditrack.patient.interfaces.dto.request.CreatePatientRequest;
 import com.meditrack.patient.interfaces.dto.request.UpdatePatientRequest;
 import com.meditrack.patient.interfaces.dto.response.PatientResponse;
-import lombok.RequiredArgsConstructor;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CachePut;
 import org.springframework.stereotype.Service;
 import com.meditrack.patient.application.exception.PatientNotFoundException;
@@ -21,12 +23,24 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
 
+@Slf4j
 @Service
-@RequiredArgsConstructor
 @Transactional
 public class PatientCommandService {
 
     private final PatientRepository patientRepository;
+    private final Counter patientRegistrationsTotal;
+    private final Counter patientUpdatesTotal;
+
+    public PatientCommandService(PatientRepository patientRepository, MeterRegistry meterRegistry) {
+        this.patientRepository = patientRepository;
+        this.patientRegistrationsTotal = Counter.builder("meditrack_patient_registrations_total")
+                .description("Total number of patient registrations")
+                .register(meterRegistry);
+        this.patientUpdatesTotal = Counter.builder("meditrack_patient_updates_total")
+                .description("Total number of patient profile updates")
+                .register(meterRegistry);
+    }
 
     public PatientResponse createPatient(CreatePatientRequest request) {
         Patient patient = new Patient();
@@ -49,6 +63,8 @@ public class PatientCommandService {
         patient.setInsurance(insurance);
 
         Patient savedPatient = patientRepository.save(patient);
+        patientRegistrationsTotal.increment();
+        log.info("Patient registered [patientId={}, mrn={}]", savedPatient.getId().getId(), request.getMrn());
         return ApplicationPatientMapper.toResponse(savedPatient);
     }
 
@@ -70,6 +86,7 @@ public class PatientCommandService {
         patient.getInsurance().setPolicyNumber(request.getInsurancePolicyNumber());
 
         Patient updatedPatient = patientRepository.save(patient);
+        patientUpdatesTotal.increment();
         return ApplicationPatientMapper.toResponse(updatedPatient);
     }
 }

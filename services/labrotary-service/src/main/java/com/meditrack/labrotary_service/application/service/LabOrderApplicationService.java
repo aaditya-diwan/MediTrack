@@ -12,7 +12,8 @@ import com.meditrack.labrotary_service.infrastructure.messaging.event.EventTopic
 import com.meditrack.labrotary_service.infrastructure.messaging.event.LabOrderEvent;
 import com.meditrack.labrotary_service.infrastructure.outbox.OutboxEvent;
 import com.meditrack.labrotary_service.infrastructure.outbox.OutboxEventRepository;
-import lombok.RequiredArgsConstructor;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,13 +29,27 @@ import java.util.UUID;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class LabOrderApplicationService implements CreateLabOrderUseCase {
 
     private final LabOrderRepository labOrderRepository;
     private final LabOrderMapper labOrderMapper;
     private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
+    private final Counter labOrdersCreatedTotal;
+
+    public LabOrderApplicationService(LabOrderRepository labOrderRepository,
+                                      LabOrderMapper labOrderMapper,
+                                      OutboxEventRepository outboxEventRepository,
+                                      ObjectMapper objectMapper,
+                                      MeterRegistry meterRegistry) {
+        this.labOrderRepository = labOrderRepository;
+        this.labOrderMapper = labOrderMapper;
+        this.outboxEventRepository = outboxEventRepository;
+        this.objectMapper = objectMapper;
+        this.labOrdersCreatedTotal = Counter.builder("meditrack_lab_orders_created_total")
+                .description("Total number of lab orders created")
+                .register(meterRegistry);
+    }
 
     @Transactional
     @Override
@@ -43,6 +58,7 @@ public class LabOrderApplicationService implements CreateLabOrderUseCase {
         labOrder.initialize();
 
         LabOrder savedOrder = labOrderRepository.save(labOrder);
+        labOrdersCreatedTotal.increment();
         log.info("Lab order created [orderId={}]", savedOrder.getId());
 
         // Write event to outbox within the same transaction — Kafka publish happens async via OutboxRelay

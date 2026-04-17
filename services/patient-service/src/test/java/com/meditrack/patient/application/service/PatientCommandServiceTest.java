@@ -9,10 +9,10 @@ import com.meditrack.patient.domain.model.valueobjects.SSN;
 import com.meditrack.patient.domain.repository.PatientRepository;
 import com.meditrack.patient.interfaces.dto.request.CreatePatientRequest;
 import com.meditrack.patient.interfaces.dto.request.UpdatePatientRequest;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -31,7 +31,7 @@ public class PatientCommandServiceTest {
     @Mock
     private PatientRepository patientRepository;
 
-    @InjectMocks
+    // Constructed manually so we can provide a real MeterRegistry (SimpleMeterRegistry is in-memory, no infra needed)
     private PatientCommandService patientCommandService;
 
     private Patient patient;
@@ -40,6 +40,8 @@ public class PatientCommandServiceTest {
 
     @BeforeEach
     void setUp() {
+        patientCommandService = new PatientCommandService(patientRepository, new SimpleMeterRegistry());
+
         patient = new Patient();
         patient.setId(PatientId.generate());
         patient.setMrn(new MRN("MRN123"));
