@@ -16,6 +16,15 @@ CREATE DATABASE pharmacy_db;
 -- Audit Service Database (for future use)
 CREATE DATABASE audit_db;
 
+-- Doctor Service Database
+CREATE DATABASE doctor_db;
+
+-- Appointment Service Database
+CREATE DATABASE appointment_db;
+
+-- Prescription Service Database
+CREATE DATABASE prescription_db;
+
 -- Keycloak Database
 CREATE DATABASE keycloak;
 
@@ -25,6 +34,9 @@ GRANT ALL PRIVILEGES ON DATABASE lab_db TO meditrack;
 GRANT ALL PRIVILEGES ON DATABASE insurance_db TO meditrack;
 GRANT ALL PRIVILEGES ON DATABASE pharmacy_db TO meditrack;
 GRANT ALL PRIVILEGES ON DATABASE audit_db TO meditrack;
+GRANT ALL PRIVILEGES ON DATABASE doctor_db TO meditrack;
+GRANT ALL PRIVILEGES ON DATABASE appointment_db TO meditrack;
+GRANT ALL PRIVILEGES ON DATABASE prescription_db TO meditrack;
 GRANT ALL PRIVILEGES ON DATABASE keycloak TO meditrack;
 
 -- Log database creation

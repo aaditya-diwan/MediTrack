@@ -8,6 +8,7 @@ import com.meditrack.patient.application.usecase.UpdatePatientUseCase;
 import com.meditrack.patient.interfaces.dto.request.CreatePatientRequest;
 import com.meditrack.patient.interfaces.dto.request.UpdatePatientRequest;
 import com.meditrack.patient.interfaces.dto.response.PatientResponse;
+import com.meditrack.patient.infrastructure.security.JwtUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,6 +17,7 @@ import org.springframework.boot.autoconfigure.security.servlet.SecurityFilterAut
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.LocalDate;
@@ -38,6 +40,12 @@ class PatientControllerTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @MockBean
+    private UserDetailsService userDetailsService;
+
+    @MockBean
+    private JwtUtil jwtUtil;
 
     @MockBean
     private CreatePatientUseCase createPatientUseCase;

@@ -1,0 +1,24 @@
+package com.meditrack.doctor.domain.model;
+
+public enum Specialization {
+    GENERAL_MEDICINE,
+    CARDIOLOGY,
+    NEUROLOGY,
+    ORTHOPEDICS,
+    PEDIATRICS,
+    DERMATOLOGY,
+    GYNECOLOGY,
+    OPHTHALMOLOGY,
+    ENT,
+    PSYCHIATRY,
+    ONCOLOGY,
+    ENDOCRINOLOGY,
+    GASTROENTEROLOGY,
+    NEPHROLOGY,
+    PULMONOLOGY,
+    UROLOGY,
+    RADIOLOGY,
+    ANESTHESIOLOGY,
+    EMERGENCY_MEDICINE,
+    SURGERY
+}

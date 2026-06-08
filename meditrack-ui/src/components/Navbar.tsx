@@ -5,8 +5,11 @@ import { usePathname, useRouter } from "next/navigation";
 
 const links = [
   { href: "/patients", label: "Patients" },
+  { href: "/doctors", label: "Doctors" },
+  { href: "/appointments", label: "Appointments" },
+  { href: "/doctor-dashboard", label: "Doctor Dashboard" },
+  { href: "/prescriptions", label: "Prescriptions" },
   { href: "/lab/orders", label: "Lab Orders" },
-  { href: "/lab/results/critical", label: "Critical Results" },
   { href: "/insurance", label: "Insurance" },
 ];
 

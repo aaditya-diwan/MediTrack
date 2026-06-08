@@ -135,6 +135,142 @@ export interface LabResultResponse {
   updatedAt: string;
 }
 
+// --- Doctor Service ---
+export type Specialization =
+  | "GENERAL_MEDICINE" | "CARDIOLOGY" | "NEUROLOGY" | "ORTHOPEDICS"
+  | "PEDIATRICS" | "DERMATOLOGY" | "GYNECOLOGY" | "OPHTHALMOLOGY"
+  | "ENT" | "PSYCHIATRY" | "ONCOLOGY" | "ENDOCRINOLOGY"
+  | "GASTROENTEROLOGY" | "NEPHROLOGY" | "PULMONOLOGY" | "UROLOGY"
+  | "RADIOLOGY" | "ANESTHESIOLOGY" | "EMERGENCY_MEDICINE" | "SURGERY";
+
+export const SPECIALIZATIONS: Specialization[] = [
+  "GENERAL_MEDICINE", "CARDIOLOGY", "NEUROLOGY", "ORTHOPEDICS",
+  "PEDIATRICS", "DERMATOLOGY", "GYNECOLOGY", "OPHTHALMOLOGY",
+  "ENT", "PSYCHIATRY", "ONCOLOGY", "ENDOCRINOLOGY",
+  "GASTROENTEROLOGY", "NEPHROLOGY", "PULMONOLOGY", "UROLOGY",
+  "RADIOLOGY", "ANESTHESIOLOGY", "EMERGENCY_MEDICINE", "SURGERY",
+];
+
+export function formatSpecialization(s: string): string {
+  return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+export interface DoctorResponse {
+  id: string;
+  employeeId: string;
+  firstName: string;
+  lastName: string;
+  fullName: string;
+  email: string;
+  phone: string;
+  specialization: Specialization;
+  qualifications: string;
+  yearsOfExperience: number;
+  bio: string;
+  active: boolean;
+}
+
+export interface AvailabilitySlotResponse {
+  id: string;
+  doctorId: string;
+  dayOfWeek: string;
+  startTime: string;
+  endTime: string;
+  slotDurationMinutes: number;
+  available: boolean;
+}
+
+// --- Appointment Service ---
+export type AppointmentStatus =
+  | "PENDING" | "CONFIRMED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED" | "NO_SHOW";
+export type AppointmentType =
+  | "FIRST_VISIT" | "FOLLOW_UP" | "EMERGENCY" | "TELECONSULTATION";
+
+export interface AppointmentResponse {
+  id: string;
+  patientId: string;
+  doctorId: string;
+  status: AppointmentStatus;
+  type: AppointmentType;
+  reasonForVisit: string;
+  notes: string;
+  scheduledAt: string;
+  actualStartAt: string | null;
+  actualEndAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BookAppointmentRequest {
+  patientId: string;
+  doctorId: string;
+  type: AppointmentType;
+  reasonForVisit?: string;
+  scheduledAt: string;
+}
+
+// --- Prescription Service ---
+export interface PrescriptionMedicationResponse {
+  id: string;
+  medicationName: string;
+  genericName: string;
+  dosage: string;
+  frequency: string;
+  duration: string;
+  route: string;
+  instructions: string;
+}
+
+export interface PrescriptionLabOrderResponse {
+  id: string;
+  testCode: string;
+  testName: string;
+  clinicalIndication: string;
+  urgency: string;
+}
+
+export interface PrescriptionResponse {
+  id: string;
+  patientId: string;
+  doctorId: string;
+  appointmentId: string | null;
+  status: string;
+  consultationNotes: string;
+  diagnosisCodes: string;
+  medications: PrescriptionMedicationResponse[];
+  labOrders: PrescriptionLabOrderResponse[];
+  issuedAt: string | null;
+  validUntil: string | null;
+  createdAt: string;
+}
+
+export interface MedicationDraft {
+  medicationName: string;
+  genericName: string;
+  dosage: string;
+  frequency: string;
+  duration: string;
+  route: string;
+  instructions: string;
+}
+
+export interface PrescriptionLabOrderDraft {
+  testCode: string;
+  testName: string;
+  clinicalIndication: string;
+  urgency: string;
+}
+
+export interface CreatePrescriptionRequest {
+  patientId: string;
+  doctorId: string;
+  appointmentId?: string;
+  consultationNotes?: string;
+  diagnosisCodes?: string;
+  medications?: MedicationDraft[];
+  labOrders?: PrescriptionLabOrderDraft[];
+}
+
 // --- Insurance Service ---
 export type Relationship =
   | "SELF"
