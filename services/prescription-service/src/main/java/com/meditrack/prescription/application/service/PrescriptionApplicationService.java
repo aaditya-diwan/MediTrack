@@ -5,12 +5,12 @@ import com.meditrack.prescription.application.exception.PrescriptionNotIssuedExc
 import com.meditrack.prescription.application.usecase.*;
 import com.meditrack.prescription.domain.model.*;
 import com.meditrack.prescription.domain.repository.PrescriptionRepository;
-import com.meditrack.prescription.infrastructure.messaging.PrescriptionEventProducer;
 import com.meditrack.prescription.infrastructure.messaging.event.*;
 import com.meditrack.prescription.interfaces.dto.request.CreatePrescriptionRequest;
 import com.meditrack.prescription.interfaces.dto.response.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,7 +27,7 @@ public class PrescriptionApplicationService implements CreatePrescriptionUseCase
         IssuePrescriptionUseCase, SendToPharmacyUseCase, SendToLabUseCase {
 
     private final PrescriptionRepository prescriptionRepository;
-    private final PrescriptionEventProducer eventProducer;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Override
     @Transactional
@@ -75,7 +75,7 @@ public class PrescriptionApplicationService implements CreatePrescriptionUseCase
         p.setIssuedAt(LocalDateTime.now());
         p.setValidUntil(LocalDate.now().plusDays(30));
         Prescription saved = prescriptionRepository.save(p);
-        eventProducer.publishIssued(PrescriptionIssuedEvent.builder()
+        eventPublisher.publishEvent(PrescriptionIssuedEvent.builder()
                 .prescriptionId(saved.getId()).patientId(saved.getPatientId())
                 .doctorId(saved.getDoctorId()).appointmentId(saved.getAppointmentId())
                 .occurredAt(Instant.now()).build());
@@ -97,7 +97,7 @@ public class PrescriptionApplicationService implements CreatePrescriptionUseCase
                         .medicationName(m.getMedicationName()).dosage(m.getDosage())
                         .frequency(m.getFrequency()).duration(m.getDuration()).build())
                 .collect(Collectors.toList());
-        eventProducer.publishSentToPharmacy(PrescriptionSentToPharmacyEvent.builder()
+        eventPublisher.publishEvent(PrescriptionSentToPharmacyEvent.builder()
                 .prescriptionId(saved.getId()).patientId(saved.getPatientId())
                 .medications(items).occurredAt(Instant.now()).build());
         return toResponse(saved);
@@ -122,7 +122,7 @@ public class PrescriptionApplicationService implements CreatePrescriptionUseCase
                         .clinicalIndication(l.getClinicalIndication())
                         .urgency(l.getUrgency() != null ? l.getUrgency().name() : "ROUTINE").build())
                 .collect(Collectors.toList());
-        eventProducer.publishSentToLab(PrescriptionSentToLabEvent.builder()
+        eventPublisher.publishEvent(PrescriptionSentToLabEvent.builder()
                 .prescriptionId(saved.getId()).patientId(saved.getPatientId()).doctorId(saved.getDoctorId())
                 .labOrders(labs).occurredAt(Instant.now()).build());
         return toResponse(saved);

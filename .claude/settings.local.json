@@ -23,7 +23,28 @@
       "Bash(powershell -Command \"\\(Get-Content D:\\\\Github\\\\MediTrack\\\\.env\\) -replace 'change_me_generate_with_openssl_rand_hex_32', 'meditrack_jwt_secret_key_for_testing_minimum_32_chars_long' -replace 'change_me', 'meditrack123' | Set-Content D:\\\\Github\\\\MediTrack\\\\.env -Encoding utf8\")",
       "Bash(docker compose *)",
       "Bash(Start-Sleep -Seconds 15)",
-      "Bash(Select-String -NotMatch \"warning|level|variable|attribute|version\")"
+      "Bash(Select-String -NotMatch \"warning|level|variable|attribute|version\")",
+      "Bash(java *)",
+      "Bash(./mvnw -q -DskipTests clean package)",
+      "Bash(break)",
+      "Bash(curl -s -w \"\\\\n[HTTP %{http_code}]\\\\n\" http://localhost:8084/actuator/health)",
+      "Bash(curl -s -w \"\\\\n[HTTP %{http_code}]\\\\n\" http://localhost:8084/api/v1/doctors)",
+      "Bash(curl -s -w \"\\\\n[HTTP %{http_code}]\\\\n\" -X POST http://localhost:8084/api/v1/doctors -H \"Content-Type: application/json\" -d '{\"employeeId\":\"EMP-001\",\"firstName\":\"Alice\",\"lastName\":\"Carter\",\"email\":\"alice.carter@meditrack.io\",\"phone\":\"+1-555-0101\",\"specialization\":\"CARDIOLOGY\",\"qualifications\":\"MD, FACC\",\"yearsOfExperience\":12,\"bio\":\"Senior cardiologist\"}')",
+      "Bash(curl -s -X POST http://localhost:8084/actuator/shutdown)",
+      "Bash(powershell -Command 'Get-NetTCPConnection -LocalPort 8084 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }')",
+      "Bash(./mvnw -q -DskipTests package)",
+      "Bash(curl -s -o /dev/null -w \"elapsed=%{time_total}s http=%{http_code}\\\\n\" -X POST http://localhost:8084/api/v1/doctors -H \"Content-Type: application/json\" -d '{\"employeeId\":\"EMP-TIMING\",\"firstName\":\"T\",\"lastName\":\"T\",\"email\":\"timing@meditrack.io\",\"specialization\":\"SURGERY\"}')",
+      "Bash(curl -s -o /tmp/create.json -w \"elapsed=%{time_total}s http=%{http_code}\\\\n\" -X POST http://localhost:8084/api/v1/doctors -H \"Content-Type: application/json\" -d '{\"employeeId\":\"EMP-001\",\"firstName\":\"Alice\",\"lastName\":\"Carter\",\"email\":\"alice.carter@meditrack.io\",\"phone\":\"+1-555-0101\",\"specialization\":\"CARDIOLOGY\",\"qualifications\":\"MD, FACC\",\"yearsOfExperience\":12,\"bio\":\"Senior cardiologist\"}')",
+      "Bash(curl -s -w '\\\\n[HTTP %{http_code}]\\\\n' http://localhost:8084/api/v1/doctors/93fb0dea-d4e2-416a-898b-8390d92b6409)",
+      "Bash(curl -s -w \"\\\\n[HTTP %{http_code}]\\\\n\" -X POST http://localhost:8084/api/v1/doctors -H \"Content-Type: application/json\" -d '{\"employeeId\":\"EMP-001\",\"firstName\":\"Dup\",\"lastName\":\"Licate\",\"email\":\"alice.carter@meditrack.io\",\"specialization\":\"NEUROLOGY\"}')",
+      "Bash(curl -s -w \"\\\\n[HTTP %{http_code}]\\\\n\" -X POST http://localhost:8084/api/v1/doctors -H \"Content-Type: application/json\" -d '{\"firstName\":\"No\",\"lastName\":\"Email\"}')",
+      "Bash(curl -s -w \"\\\\n[HTTP %{http_code}]\\\\n\" http://localhost:8084/api/v1/doctors/00000000-0000-0000-0000-000000000000)",
+      "Bash(curl -s -w '\\\\n[HTTP %{http_code}]\\\\n' -X POST http://localhost:8084/api/v1/doctors/93fb0dea-d4e2-416a-898b-8390d92b6409/schedule -H 'Content-Type: application/json' -d '{\"slots\":[{\"dayOfWeek\":\"MONDAY\",\"startTime\":\"09:00\",\"endTime\":\"12:00\",\"slotDurationMinutes\":30},{\"dayOfWeek\":\"WEDNESDAY\",\"startTime\":\"14:00\",\"endTime\":\"17:00\",\"slotDurationMinutes\":20}]}')",
+      "Bash(curl -s -w \"\\\\n[HTTP %{http_code}]\\\\n\" -X POST http://localhost:8084/api/v1/doctors -H \"Content-Type: application/json\" -d '{\"employeeId\":\"EMP-X\",\"firstName\":\"A\",\"lastName\":\"B\",\"email\":\"x@y.io\",\"specialization\":\"WIZARDRY\"}')",
+      "Bash(curl -s -o /dev/null -w \"elapsed=%{time_total}s http=%{http_code}\\\\n\" -X POST http://localhost:8084/api/v1/doctors -H \"Content-Type: application/json\" -d '{\"employeeId\":\"EMP-200\",\"firstName\":\"Bob\",\"lastName\":\"Lee\",\"email\":\"bob.lee@meditrack.io\",\"specialization\":\"PEDIATRICS\"}')",
+      "Bash(./mvnw -q -DskipTests compile)",
+      "Bash(awk 'NR>=1{print NR\": \"$0}' /tmp/appt.log)",
+      "Bash(powershell -Command 'Get-NetTCPConnection -LocalPort 8085 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }')"
     ]
   }
 }

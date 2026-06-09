@@ -6,13 +6,13 @@ import com.meditrack.appointment.application.usecase.*;
 import com.meditrack.appointment.domain.model.Appointment;
 import com.meditrack.appointment.domain.model.AppointmentStatus;
 import com.meditrack.appointment.domain.repository.AppointmentRepository;
-import com.meditrack.appointment.infrastructure.messaging.AppointmentEventProducer;
 import com.meditrack.appointment.infrastructure.messaging.event.AppointmentBookedEvent;
 import com.meditrack.appointment.infrastructure.messaging.event.AppointmentCompletedEvent;
 import com.meditrack.appointment.interfaces.dto.request.BookAppointmentRequest;
 import com.meditrack.appointment.interfaces.dto.response.AppointmentResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,7 +29,7 @@ public class AppointmentApplicationService implements BookAppointmentUseCase, Ge
         CancelAppointmentUseCase {
 
     private final AppointmentRepository appointmentRepository;
-    private final AppointmentEventProducer eventProducer;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Override
     @Transactional
@@ -48,7 +48,7 @@ public class AppointmentApplicationService implements BookAppointmentUseCase, Ge
                 .build();
         Appointment saved = appointmentRepository.save(appointment);
         log.info("Booked appointment id={}", saved.getId());
-        eventProducer.publishBooked(AppointmentBookedEvent.builder()
+        eventPublisher.publishEvent(AppointmentBookedEvent.builder()
                 .appointmentId(saved.getId())
                 .patientId(saved.getPatientId())
                 .doctorId(saved.getDoctorId())
@@ -73,7 +73,7 @@ public class AppointmentApplicationService implements BookAppointmentUseCase, Ge
         a.setStatus(status);
         Appointment updated = appointmentRepository.save(a);
         if (status == AppointmentStatus.COMPLETED) {
-            eventProducer.publishCompleted(AppointmentCompletedEvent.builder()
+            eventPublisher.publishEvent(AppointmentCompletedEvent.builder()
                     .appointmentId(updated.getId()).patientId(updated.getPatientId())
                     .doctorId(updated.getDoctorId()).occurredAt(Instant.now()).build());
         }

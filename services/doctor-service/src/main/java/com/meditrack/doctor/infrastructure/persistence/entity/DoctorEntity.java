@@ -39,6 +39,7 @@ public class DoctorEntity {
     @Column(columnDefinition = "TEXT")
     private String bio;
 
+    @Column(name = "is_active")
     private boolean active = true;
 
     private LocalDateTime createdAt;

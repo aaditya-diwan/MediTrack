@@ -28,6 +28,8 @@ public class AvailabilitySlotEntity {
     private LocalTime endTime;
 
     private int slotDurationMinutes = 30;
+
+    @Column(name = "is_available")
     private boolean available = true;
     private LocalDateTime createdAt;
 

@@ -66,6 +66,8 @@ spring:
         enable.idempotence: true
         max.in.flight.requests.per.connection: 5
         compression.type: snappy
+        # Fail fast instead of blocking 60s when the broker is unreachable.
+        max.block.ms: 5000
     consumer:
       group-id: ${spring.application.name}
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer

@@ -8,7 +8,6 @@ import com.meditrack.doctor.domain.model.Doctor;
 import com.meditrack.doctor.domain.model.Specialization;
 import com.meditrack.doctor.domain.repository.AvailabilitySlotRepository;
 import com.meditrack.doctor.domain.repository.DoctorRepository;
-import com.meditrack.doctor.infrastructure.messaging.DoctorEventProducer;
 import com.meditrack.doctor.infrastructure.messaging.event.DoctorCreatedEvent;
 import com.meditrack.doctor.interfaces.dto.request.CreateDoctorRequest;
 import com.meditrack.doctor.interfaces.dto.request.SetScheduleRequest;
@@ -16,6 +15,7 @@ import com.meditrack.doctor.interfaces.dto.response.AvailabilitySlotResponse;
 import com.meditrack.doctor.interfaces.dto.response.DoctorResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,7 +34,7 @@ public class DoctorApplicationService implements CreateDoctorUseCase, GetDoctorU
 
     private final DoctorRepository doctorRepository;
     private final AvailabilitySlotRepository slotRepository;
-    private final DoctorEventProducer eventProducer;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Override
     @Transactional
@@ -63,7 +63,7 @@ public class DoctorApplicationService implements CreateDoctorUseCase, GetDoctorU
         Doctor saved = doctorRepository.save(doctor);
         log.info("Created doctor id={} employeeId={}", saved.getId(), saved.getEmployeeId());
 
-        eventProducer.publishDoctorCreated(DoctorCreatedEvent.builder()
+        eventPublisher.publishEvent(DoctorCreatedEvent.builder()
                 .doctorId(saved.getId())
                 .employeeId(saved.getEmployeeId())
                 .fullName(saved.getFullName())
