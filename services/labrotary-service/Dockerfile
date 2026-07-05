@@ -9,11 +9,13 @@ COPY src ./src
 RUN mvn clean package -Dmaven.test.skip=true -Ddependency-check.skip=true -B
 
 # Stage 2: Runtime
-FROM eclipse-temurin:21-jre-alpine
+# glibc JRE (not Alpine/musl): snappy-java's native Kafka compression lib is
+# glibc-linked and fails to load on Alpine, breaking event publishing.
+FROM eclipse-temurin:21-jre
 WORKDIR /app
 
 # Add non-root user for security
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+RUN groupadd -r appgroup && useradd -r -g appgroup appuser
 USER appuser
 
 # Copy artifact from build stage

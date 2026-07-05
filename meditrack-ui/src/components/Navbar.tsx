@@ -2,20 +2,19 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { navFor, type Role } from "@/lib/rbac";
 
-const links = [
-  { href: "/patients", label: "Patients" },
-  { href: "/doctors", label: "Doctors" },
-  { href: "/appointments", label: "Appointments" },
-  { href: "/doctor-dashboard", label: "Doctor Dashboard" },
-  { href: "/prescriptions", label: "Prescriptions" },
-  { href: "/lab/orders", label: "Lab Orders" },
-  { href: "/insurance", label: "Insurance" },
-];
+const ROLE_LABEL: Record<Role, string> = {
+  ADMIN: "Admin",
+  DOCTOR: "Doctor",
+  NURSE: "Nurse",
+  LAB_TECH: "Lab Tech",
+};
 
-export default function Navbar() {
+export default function Navbar({ role }: { role: Role | null }) {
   const pathname = usePathname();
   const router = useRouter();
+  const links = navFor(role);
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -24,7 +23,7 @@ export default function Navbar() {
 
   return (
     <nav className="bg-slate-800 text-white px-6 py-3 flex items-center gap-6">
-      <Link href="/patients" className="font-bold text-lg tracking-tight mr-4">
+      <Link href="/" className="font-bold text-lg tracking-tight mr-4">
         MediTrack
       </Link>
       {links.map((l) => (
@@ -38,12 +37,19 @@ export default function Navbar() {
           {l.label}
         </Link>
       ))}
-      <button
-        onClick={handleLogout}
-        className="ml-auto text-sm text-slate-400 hover:text-white transition-colors"
-      >
-        Logout
-      </button>
+      <div className="ml-auto flex items-center gap-4">
+        {role && (
+          <span className="text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-200">
+            {ROLE_LABEL[role]}
+          </span>
+        )}
+        <button
+          onClick={handleLogout}
+          className="text-sm text-slate-400 hover:text-white transition-colors"
+        >
+          Logout
+        </button>
+      </div>
     </nav>
   );
 }

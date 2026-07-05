@@ -1,0 +1,71 @@
+server:
+  port: 8089
+
+spring:
+  application:
+    name: ai-service
+
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all
+      retries: 3
+      properties:
+        enable.idempotence: true
+        compression.type: snappy
+        # Fail fast instead of blocking 60s when the broker is unreachable.
+        max.block.ms: 5000
+
+# TensorX — EU-sovereign, OpenAI-compatible open-weight inference (zero data retention).
+# No PHI is persisted by this service; each request is stateless.
+tensorx:
+  base-url: ${TENSORX_BASE_URL:https://api.tensorx.ai/v1}
+  api-key: ${TENSORX_API_KEY:}
+  model: ${TENSORX_MODEL:deepseek/deepseek-chat-v3.1}
+  temperature: ${TENSORX_TEMPERATURE:0.1}
+  timeout-seconds: ${TENSORX_TIMEOUT_SECONDS:60}
+
+jwt:
+  secret: ${JWT_SECRET:your-very-long-and-secure-secret-key-that-is-at-least-256-bits-long-local-only}
+  expiration: 86400
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: ${spring.application.name}
+  tracing:
+    sampling:
+      probability: 1.0
+  zipkin:
+    tracing:
+      endpoint: http://localhost:9411/api/v2/spans
+
+logging:
+  level:
+    root: INFO
+    com.meditrack: DEBUG
+
+---
+spring:
+  config:
+    activate:
+      on-profile: docker
+  kafka:
+    bootstrap-servers: kafka:29092
+
+management:
+  zipkin:
+    tracing:
+      endpoint: http://jaeger:9411/api/v2/spans

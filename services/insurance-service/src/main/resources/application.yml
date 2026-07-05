@@ -193,8 +193,10 @@ spring:
     console:
       enabled: false
   flyway:
-    # Use the full PostgreSQL schema (with triggers/arrays) for docker/prod
-    locations: classpath:db/migration
+    # Use the full PostgreSQL schema (with triggers/arrays) for docker/prod.
+    # Kept in its own subfolder so Flyway's recursive scan of classpath:db/migration
+    # does not also pick up the H2 variant under db/migration/h2 (duplicate V1).
+    locations: classpath:db/migration/postgresql
   kafka:
     bootstrap-servers: kafka:29092
   redis:

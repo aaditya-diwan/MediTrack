@@ -1,0 +1,17 @@
+spring:
+  kafka:
+    bootstrap-servers: localhost:9092
+
+tensorx:
+  base-url: http://localhost:0/v1
+  api-key: test-key-not-used
+  model: test-model
+  temperature: 0.1
+  timeout-seconds: 5
+
+jwt:
+  secret: test-secret-key-that-is-at-least-256-bits-long-for-hs256-signing-in-unit-tests
+
+management:
+  tracing:
+    enabled: false
