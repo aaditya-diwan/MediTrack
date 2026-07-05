@@ -12,8 +12,18 @@ service — each own their data and coordinate through versioned Kafka domain ev
 calls. A **Next.js backend-for-frontend (BFF)** is the single edge the browser talks to, and the whole
 platform is wrapped in a metrics/traces/logs observability stack.
 
+## 🎥 Demo
+
+![MediTrack AI clinical decision support — flagging a drug interaction and an allergy conflict in real time](docs/meditrack-ai-cdss-demo.gif)
+
+> Signing in and running the **AI prescription-safety check**: prescribing Amoxicillin to a patient on
+> Warfarin + Ibuprofen with a penicillin allergy instantly surfaces a **MAJOR** Warfarin–Ibuprofen
+> interaction and a **CONTRAINDICATED** Amoxicillin–penicillin conflict — screened by open-weight LLM
+> inference (TensorX) and returned through the event-driven microservice fleet.
+
 ## 📋 Table of Contents
 
+- [Demo](#-demo)
 - [Overview](#overview)
 - [Architecture](#architecture)
 - [Prerequisites](#prerequisites)
