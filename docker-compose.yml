@@ -191,6 +191,22 @@ services:
     networks:
       - meditrack-network
 
+  # Ships all container logs (stdout) to Elasticsearch → Kibana (the "logs" pillar).
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.11.0
+    container_name: meditrack-filebeat
+    user: root
+    command: ["filebeat", "-e", "--strict.perms=false"]
+    depends_on:
+      - elasticsearch
+    volumes:
+      - ./monitoring/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - filebeat-data:/usr/share/filebeat/data
+    networks:
+      - meditrack-network
+
   # ===========================
   # Identity & Access Management
   # ===========================
@@ -491,4 +507,5 @@ volumes:
   prometheus-data:
   grafana-data:
   elasticsearch-data:
+  filebeat-data:
   kong-db-data:

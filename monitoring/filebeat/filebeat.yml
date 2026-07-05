@@ -1,0 +1,28 @@
+# Filebeat — ships MediTrack container logs (stdout) to Elasticsearch → Kibana.
+# Reads the Docker json-file logs, groups multi-line Java stack traces into a single
+# event, and tags each line with its container/service name via docker metadata.
+# Completes the "logs" pillar of the observability stack (metrics + traces + logs).
+
+filebeat.inputs:
+  - type: container
+    paths:
+      - '/var/lib/docker/containers/*/*.log'
+    parsers:
+      # Spring Boot log lines start with an ISO date; anything that doesn't
+      # (e.g. a Java stack trace) is appended to the preceding line.
+      - multiline:
+          type: pattern
+          pattern: '^\d{4}-\d{2}-\d{2}[ T]'
+          negate: true
+          match: after
+
+processors:
+  # Attach container name / image / compose labels so you can filter by service in Kibana.
+  - add_docker_metadata:
+      host: 'unix:///var/run/docker.sock'
+
+output.elasticsearch:
+  hosts: ['http://elasticsearch:9200']
+  # Logs land in the default filebeat-* data stream; create a Kibana data view for "filebeat-*".
+
+logging.level: warning

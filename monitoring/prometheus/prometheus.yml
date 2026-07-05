@@ -69,6 +69,50 @@ scrape_configs:
           service_type: 'microservice'
           domain: 'insurance'
 
+  # Doctor Service
+  - job_name: 'doctor-service'
+    metrics_path: '/actuator/prometheus'
+    scrape_interval: 10s
+    static_configs:
+      - targets: ['doctor-service:8084']
+        labels:
+          service: 'doctor-service'
+          service_type: 'microservice'
+          domain: 'doctor-management'
+
+  # Appointment Service
+  - job_name: 'appointment-service'
+    metrics_path: '/actuator/prometheus'
+    scrape_interval: 10s
+    static_configs:
+      - targets: ['appointment-service:8085']
+        labels:
+          service: 'appointment-service'
+          service_type: 'microservice'
+          domain: 'scheduling'
+
+  # Prescription Service
+  - job_name: 'prescription-service'
+    metrics_path: '/actuator/prometheus'
+    scrape_interval: 10s
+    static_configs:
+      - targets: ['prescription-service:8086']
+        labels:
+          service: 'prescription-service'
+          service_type: 'microservice'
+          domain: 'pharmacy'
+
+  # AI Service — uncomment once ai-service is deployed (feature branch)
+  # - job_name: 'ai-service'
+  #   metrics_path: '/actuator/prometheus'
+  #   scrape_interval: 10s
+  #   static_configs:
+  #     - targets: ['ai-service:8089']
+  #       labels:
+  #         service: 'ai-service'
+  #         service_type: 'microservice'
+  #         domain: 'clinical-decision-support'
+
   # ===========================
   # Infrastructure Components
   # ===========================
