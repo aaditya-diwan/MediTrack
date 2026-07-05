@@ -42,19 +42,77 @@ MediTrack creates a **central data exchange hub** that connects all healthcare s
 
 ## 🏗️ Architecture
 
-### Microservices
+### System Architecture
 
-```
-┌─────────────────┐     ┌──────────────────┐     ┌────────────────────┐
-│ Patient Service │ ──► │   Apache Kafka   │ ◄── │ Laboratory Service │
-│    (Port 8081)  │     │  Event Streaming │     │    (Port 8082)     │
-└─────────────────┘     └──────────────────┘     └────────────────────┘
-         │                        │                         │
-         │                        ▼                         │
-         │              ┌──────────────────┐               │
-         └────────────► │ Insurance Service│ ◄─────────────┘
-                        │   (Port 8083)    │
-                        └──────────────────┘
+> Single view of the whole platform. Solid arrows are the live request/data path;
+> dashed arrows are provisioned-but-not-yet-on-the-hot-path (edge) or cross-cutting
+> telemetry. Renders natively on GitHub.
+
+```mermaid
+flowchart TB
+    User(["👩‍⚕️  Clinician / Staff — Web Browser"])
+
+    subgraph FE["Frontend · Next.js 16 BFF"]
+        UI["meditrack-ui  :3001<br/>pages · auth-guard middleware<br/>per-domain reverse proxy · httpOnly JWT cookie"]
+    end
+
+    subgraph EDGE["Edge / IAM · provisioned (not yet on hot path)"]
+        KONG["Kong API Gateway"]
+        KC["Keycloak · OIDC"]
+    end
+
+    subgraph SVC["Microservice Fleet · Spring Boot 3 · Java 21 · Hexagonal · JWT-secured"]
+        direction LR
+        PAT["patient-service  :8081<br/>patients · medical records<br/>🔑 JWT issuer / auth"]
+        DOC["doctor-service  :8084<br/>doctors · availability"]
+        APP["appointment-service  :8085<br/>booking · scheduling"]
+        RX["prescription-service  :8086<br/>prescriptions · PDF"]
+        LAB["lab-service  :8082<br/>orders · results · outbox"]
+        INS["insurance-service  :8083<br/>policies · claims"]
+        AI["ai-service  :8089<br/>clinical decision support"]
+    end
+
+    KAFKA{{"Apache Kafka · Event Backbone<br/>versioned domain events — e.g. patient.created.v1, lab.results.available.v1, prescription.issued.v1"}}
+
+    subgraph DATA["State Stores"]
+        direction LR
+        PG[("PostgreSQL 15<br/>database-per-service")]
+        REDIS[("Redis · cache / TTL")]
+    end
+
+    TX["☁️ TensorX<br/>open-weight LLM inference<br/>(EU-sovereign · external)"]
+
+    subgraph OBS["Observability"]
+        direction LR
+        PROM["Prometheus + Grafana<br/>metrics"]
+        JAEGER["Jaeger<br/>tracing"]
+        ELK["Elasticsearch + Kibana<br/>logs / audit"]
+    end
+
+    User -->|HTTPS| UI
+    UI -->|"REST + Bearer JWT<br/>(login issues the JWT via patient-service)"| SVC
+    EDGE -. "intended production edge" .-> SVC
+
+    SVC -->|JDBC| PG
+    SVC -->|cache| REDIS
+    SVC <-->|"produce / consume"| KAFKA
+    AI -->|"OpenAI-compatible API"| TX
+    SVC -. "metrics · traces · logs" .-> OBS
+
+    classDef fe fill:#1e3a5f,stroke:#4f93ce,color:#fff;
+    classDef svc fill:#143d2b,stroke:#3fa66a,color:#fff;
+    classDef data fill:#4a2f10,stroke:#d08a30,color:#fff;
+    classDef msg fill:#3d1f47,stroke:#a45fb8,color:#fff;
+    classDef obs fill:#3d1414,stroke:#cc5151,color:#fff;
+    classDef edge fill:#13343b,stroke:#3fb4c4,color:#fff;
+    classDef ext fill:#3a2f0b,stroke:#c9a227,color:#fff;
+    class UI fe;
+    class PAT,DOC,APP,RX,LAB,INS,AI svc;
+    class PG,REDIS data;
+    class KAFKA msg;
+    class PROM,JAEGER,ELK obs;
+    class KONG,KC edge;
+    class TX ext;
 ```
 
 ### Technology Stack
