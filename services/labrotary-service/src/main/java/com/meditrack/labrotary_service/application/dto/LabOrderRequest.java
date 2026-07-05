@@ -16,11 +16,17 @@ public class LabOrderRequest {
     @NotBlank(message = "Patient ID is required")
     private String patientId;
 
+    @NotBlank(message = "MRN is required")
+    private String mrn;
+
     @NotBlank(message = "Facility ID is required")
     private String facilityId;
 
     @NotBlank(message = "Ordering physician ID is required")
     private String orderingPhysicianId;
+
+    @NotBlank(message = "Ordering provider name is required")
+    private String orderingProviderName;
 
     private String preAuthorizationId;
 
