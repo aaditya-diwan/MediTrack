@@ -1,0 +1,1 @@
+docker run -d --name meditrack-doctor-service -p 8084:8084 meditrack-doctor-service:latest
