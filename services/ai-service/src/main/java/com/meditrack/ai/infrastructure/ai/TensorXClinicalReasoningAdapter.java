@@ -4,7 +4,12 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.meditrack.ai.application.exception.ClinicalReasoningException;
 import com.meditrack.ai.domain.model.AllergyConflict;
+import com.meditrack.ai.domain.model.ClinicalUrgency;
 import com.meditrack.ai.domain.model.DrugInteraction;
+import com.meditrack.ai.domain.model.LabResultDetail;
+import com.meditrack.ai.domain.model.LabResultExplanation;
+import com.meditrack.ai.domain.model.LabResultExplanationCommand;
+import com.meditrack.ai.domain.model.LabValue;
 import com.meditrack.ai.domain.model.Medication;
 import com.meditrack.ai.domain.model.SafetyAssessment;
 import com.meditrack.ai.domain.model.SafetyCheckCommand;
@@ -49,12 +54,41 @@ public class TensorXClinicalReasoningAdapter implements ClinicalReasoningPort {
             - Respond with a SINGLE valid JSON object and nothing else. No prose, no markdown code fences.
             """;
 
+    private static final String LAB_SYSTEM_PROMPT = """
+            You are a clinical decision support assistant for licensed healthcare professionals.
+            You explain a panel of lab results clearly and accurately.
+
+            Rules:
+            - Use these urgency tiers only: ROUTINE, MONITOR, URGENT, CRITICAL.
+            - "urgency" must equal the single highest urgency across all findings.
+            - Be conservative: when uncertain, escalate urgency rather than understate it.
+            - Never invent tests, values, or findings that are not implied by the input.
+            - "patientFriendlySummary" must be plain language a non-clinician can understand.
+            - Respond with a SINGLE valid JSON object and nothing else. No prose, no markdown code fences.
+            """;
+
     private final RestClient tensorxRestClient;
     private final TensorXProperties props;
     private final ObjectMapper objectMapper;
 
     @Override
     public SafetyAssessment assess(SafetyCheckCommand command) {
+        String content = requestCompletion(SYSTEM_PROMPT, buildUserPrompt(command));
+        return toAssessment(parse(content));
+    }
+
+    @Override
+    public LabResultExplanation explainLabResult(LabResultExplanationCommand command) {
+        String content = requestCompletion(LAB_SYSTEM_PROMPT, buildLabPrompt(command));
+        return toExplanation(parseLab(content));
+    }
+
+    /**
+     * Shared TensorX call: validates config, sends a JSON-mode chat completion,
+     * and returns the (fence-stripped) content string. Vendor/HTTP concerns live
+     * here; each use case only supplies its system + user prompt and parses.
+     */
+    private String requestCompletion(String systemPrompt, String userPrompt) {
         if (props.apiKey() == null || props.apiKey().isBlank()) {
             throw new ClinicalReasoningException(
                     "TensorX API key is not configured. Set the TENSORX_API_KEY environment variable.");
@@ -63,8 +97,8 @@ public class TensorXClinicalReasoningAdapter implements ClinicalReasoningPort {
         TensorXApi.ChatRequest request = new TensorXApi.ChatRequest(
                 props.model(),
                 List.of(
-                        new TensorXApi.Message("system", SYSTEM_PROMPT),
-                        new TensorXApi.Message("user", buildUserPrompt(command))
+                        new TensorXApi.Message("system", systemPrompt),
+                        new TensorXApi.Message("user", userPrompt)
                 ),
                 props.temperature(),
                 TensorXApi.ResponseFormat.jsonObject()
@@ -83,8 +117,7 @@ public class TensorXClinicalReasoningAdapter implements ClinicalReasoningPort {
             throw new ClinicalReasoningException("TensorX inference call failed: " + ex.getMessage(), ex);
         }
 
-        String content = extractContent(response);
-        return toAssessment(parse(content));
+        return extractContent(response);
     }
 
     private String buildUserPrompt(SafetyCheckCommand cmd) {
@@ -126,6 +159,53 @@ public class TensorXClinicalReasoningAdapter implements ClinicalReasoningPort {
                   ],
                   "allergyConflicts": [
                     {"medication": "", "allergen": "", "severity": "", "note": ""}
+                  ]
+                }
+                """);
+        return sb.toString();
+    }
+
+    private String buildLabPrompt(LabResultExplanationCommand cmd) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Explain these lab results for the patient described below.\n\n");
+
+        sb.append("Patient:\n");
+        sb.append("- age: ").append(cmd.patientAgeYears() != null ? cmd.patientAgeYears() : "unknown").append('\n');
+        sb.append("- sex: ").append(orUnknown(cmd.patientSex())).append('\n');
+        if (cmd.context() != null && !cmd.context().isBlank()) {
+            sb.append("- context: ").append(cmd.context()).append('\n');
+        }
+
+        sb.append("\nResults:\n");
+        if (cmd.results() == null || cmd.results().isEmpty()) {
+            sb.append("- (none provided)\n");
+        } else {
+            for (LabValue v : cmd.results()) {
+                sb.append("- ").append(orUnknown(v.testName())).append(": ")
+                        .append(orUnknown(v.value()));
+                if (v.unit() != null && !v.unit().isBlank()) {
+                    sb.append(' ').append(v.unit());
+                }
+                if (v.referenceRange() != null && !v.referenceRange().isBlank()) {
+                    sb.append(" (ref ").append(v.referenceRange()).append(')');
+                }
+                if (v.flag() != null && !v.flag().isBlank()) {
+                    sb.append(" flag=").append(v.flag());
+                }
+                sb.append('\n');
+            }
+        }
+
+        sb.append("""
+
+                Return JSON exactly in this shape:
+                {
+                  "overallSummary": "clinician-facing summary of the panel",
+                  "patientFriendlySummary": "the same in plain language for a patient",
+                  "suggestedFollowUp": "the recommended next step",
+                  "urgency": "ROUTINE|MONITOR|URGENT|CRITICAL",
+                  "results": [
+                    {"testName": "", "interpretation": "", "explanation": "", "clinicalSignificance": ""}
                   ]
                 }
                 """);
@@ -197,6 +277,32 @@ public class TensorXClinicalReasoningAdapter implements ClinicalReasoningPort {
         );
     }
 
+    private AiLabPayload parseLab(String json) {
+        try {
+            return objectMapper.readValue(json, AiLabPayload.class);
+        } catch (Exception ex) {
+            log.warn("Could not parse TensorX lab response as JSON: {}", ex.getMessage());
+            throw new ClinicalReasoningException("TensorX returned an unparseable lab explanation", ex);
+        }
+    }
+
+    private LabResultExplanation toExplanation(AiLabPayload p) {
+        List<LabResultDetail> details = Optional.ofNullable(p.results()).orElse(List.of())
+                .stream()
+                .map(d -> new LabResultDetail(d.testName(), d.interpretation(),
+                        d.explanation(), d.clinicalSignificance()))
+                .toList();
+
+        return new LabResultExplanation(
+                Optional.ofNullable(p.overallSummary()).orElse(""),
+                Optional.ofNullable(p.patientFriendlySummary()).orElse(""),
+                Optional.ofNullable(p.suggestedFollowUp()).orElse(""),
+                ClinicalUrgency.fromString(p.urgency()),
+                details,
+                props.model()
+        );
+    }
+
     private static String orUnknown(String s) {
         return (s == null || s.isBlank()) ? "unknown" : s;
     }
@@ -226,5 +332,19 @@ public class TensorXClinicalReasoningAdapter implements ClinicalReasoningPort {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     record AiAllergy(String medication, String allergen, String severity, String note) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record AiLabPayload(
+            String overallSummary,
+            String patientFriendlySummary,
+            String suggestedFollowUp,
+            String urgency,
+            List<AiLabDetail> results
+    ) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record AiLabDetail(String testName, String interpretation, String explanation, String clinicalSignificance) {
     }
 }

@@ -301,6 +301,24 @@ Content-Type: application/json
 # A MAJOR/CONTRAINDICATED or allergy-conflict result also emits prescription.safety.flagged.v1 on Kafka.
 ```
 
+```bash
+# Explain a panel of lab results in plain language
+POST http://localhost:8089/api/v1/ai/lab-result-explanation
+Authorization: Bearer <JWT>
+Content-Type: application/json
+
+{
+  "results": [
+    {"testName": "Potassium", "value": "6.4", "unit": "mmol/L", "referenceRange": "3.5-5.1", "flag": "CRITICAL"},
+    {"testName": "Hemoglobin", "value": "8.1", "unit": "g/dL", "referenceRange": "13.5-17.5", "flag": "L"}
+  ],
+  "patientAgeYears": 64,
+  "patientSex": "MALE"
+}
+
+# → 200: { urgency (ROUTINE..CRITICAL), overallSummary, patientFriendlySummary, results[], suggestedFollowUp, disclaimer }
+```
+
 ### Actuator Endpoints
 
 All services expose Spring Boot Actuator endpoints:

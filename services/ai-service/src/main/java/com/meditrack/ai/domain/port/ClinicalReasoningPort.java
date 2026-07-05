@@ -1,5 +1,7 @@
 package com.meditrack.ai.domain.port;
 
+import com.meditrack.ai.domain.model.LabResultExplanation;
+import com.meditrack.ai.domain.model.LabResultExplanationCommand;
 import com.meditrack.ai.domain.model.SafetyAssessment;
 import com.meditrack.ai.domain.model.SafetyCheckCommand;
 
@@ -11,5 +13,9 @@ import com.meditrack.ai.domain.model.SafetyCheckCommand;
  */
 public interface ClinicalReasoningPort {
 
+    /** Screen a proposed prescription for drug interactions and allergy conflicts. */
     SafetyAssessment assess(SafetyCheckCommand command);
+
+    /** Explain a panel of lab results in clinician- and patient-facing language. */
+    LabResultExplanation explainLabResult(LabResultExplanationCommand command);
 }
