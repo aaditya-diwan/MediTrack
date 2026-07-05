@@ -1,6 +1,5 @@
 package com.meditrack.patient.interfaces.web;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.meditrack.patient.domain.model.Patient;
 import com.meditrack.patient.domain.model.valueobjects.SSN;
 import com.meditrack.patient.domain.repository.PatientRepository;
@@ -26,7 +25,7 @@ public class PatientLabOrderController {
 
     @PostMapping
     public ResponseEntity<String> orderLabTest(@PathVariable String ssn,
-                                               @RequestBody OrderLabTestRequest request) throws JsonProcessingException {
+                                               @RequestBody OrderLabTestRequest request) {
         // Note: routing by SSN in the URL exposes PHI — TODO: switch to patientId or MRN
         Patient patient = patientRepository.findBySsn(new SSN(ssn))
                 .orElseThrow(() -> new RuntimeException("Patient not found"));

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { landingFor, roleFromJwt } from "@/lib/rbac";
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
@@ -22,5 +23,6 @@ export async function POST(req: NextRequest) {
     sameSite: "lax",
     maxAge: 86400,
   });
-  return NextResponse.json({ ok: true });
+  const role = roleFromJwt(jwt);
+  return NextResponse.json({ ok: true, role, landing: landingFor(role) });
 }

@@ -86,7 +86,7 @@ class LabOrderApplicationServiceTest {
         LabOrderResponse response = service.createLabOrder(request);
 
         assertThat(response).isNotNull();
-        assertThat(response.getOrderId()).isEqualTo(savedOrder.getId());
+        assertThat(response.getId()).isEqualTo(savedOrder.getId());
 
         // Verify order was saved
         verify(labOrderRepository).save(any(LabOrder.class));

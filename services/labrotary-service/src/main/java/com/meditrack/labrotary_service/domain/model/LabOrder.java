@@ -16,8 +16,10 @@ import java.util.UUID;
 public class LabOrder {
     private UUID id;
     private String patientId;
+    private String mrn;
     private String facilityId;
     private String orderingPhysicianId;
+    private String orderingProviderName;
     private String preAuthorizationId;
     private OffsetDateTime orderTimestamp;
     private Priority priority;

@@ -216,6 +216,7 @@ docker-compose up -d patient-service lab-service
 | **Patient Service** | 8081 | Patient management API |
 | **Laboratory Service** | 8082 | Lab orders & results API |
 | **Insurance Service** | 8083 | Insurance & claims API |
+| **AI Service** | 8089 | Clinical decision support (TensorX open-weight inference) |
 | **Kong API Gateway** | 8000 | HTTP proxy |
 | **PostgreSQL** | 5432 | Database |
 | **Redis** | 6379 | Cache |
@@ -271,6 +272,51 @@ Content-Type: application/json
   "tests": [{"testCode": "CBC", "testName": "Complete Blood Count"}],
   "priority": "ROUTINE"
 }
+```
+
+### AI Service — Clinical Decision Support
+
+Powered by [TensorX](https://tensorx.ai) open-weight models (EU-sovereign, OpenAI-compatible,
+zero data retention). Set `TENSORX_API_KEY` in `.env` before use — the service fails safe (HTTP 502)
+without it. Stateless: no PHI is persisted.
+
+```bash
+# Screen a prescription for drug-drug interactions and allergy conflicts
+POST http://localhost:8089/api/v1/ai/prescription-safety
+Authorization: Bearer <JWT>
+Content-Type: application/json
+
+{
+  "medications": [
+    {"name": "Warfarin", "dosage": "5mg", "route": "oral"},
+    {"name": "Ibuprofen", "dosage": "400mg", "route": "oral"}
+  ],
+  "currentMedications": ["Aspirin 81mg"],
+  "knownAllergies": ["penicillin"],
+  "patientAgeYears": 68,
+  "patientSex": "MALE"
+}
+
+# → 200: { overallRisk, requiresPharmacistReview, interactions[], allergyConflicts[], recommendation, disclaimer, ... }
+# A MAJOR/CONTRAINDICATED or allergy-conflict result also emits prescription.safety.flagged.v1 on Kafka.
+```
+
+```bash
+# Explain a panel of lab results in plain language
+POST http://localhost:8089/api/v1/ai/lab-result-explanation
+Authorization: Bearer <JWT>
+Content-Type: application/json
+
+{
+  "results": [
+    {"testName": "Potassium", "value": "6.4", "unit": "mmol/L", "referenceRange": "3.5-5.1", "flag": "CRITICAL"},
+    {"testName": "Hemoglobin", "value": "8.1", "unit": "g/dL", "referenceRange": "13.5-17.5", "flag": "L"}
+  ],
+  "patientAgeYears": 64,
+  "patientSex": "MALE"
+}
+
+# → 200: { urgency (ROUTINE..CRITICAL), overallSummary, patientFriendlySummary, results[], suggestedFollowUp, disclaimer }
 ```
 
 ### Actuator Endpoints

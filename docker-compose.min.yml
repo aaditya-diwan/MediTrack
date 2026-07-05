@@ -1,0 +1,125 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# MediTrack — LEAN stack for local functional testing.
+#
+# Runs only the minimum needed to exercise auth + the AI clinical-decision-support
+# feature: the core infra (postgres, kafka, zookeeper, redis) plus patient-service
+# (the JWT issuer / login) and ai-service (prescription safety check).
+#
+# Deliberately OMITS everything that is not on the app hot path:
+#   observability  → prometheus, grafana, jaeger, elasticsearch, kibana
+#   edge / IAM     → kong, kong-database, kong-migrations, keycloak
+#
+# schema-registry is included because patient-service declares it as a startup
+# dependency (Compose `extends` merges depends_on, so it can't be dropped here).
+# It is unused at runtime — the services serialize events as JSON, not Avro — but
+# it's lightweight (~300 MB) and only needs to be *started*, not healthy.
+#
+# Each service inherits its full definition (build, env, ports, healthcheck) from
+# docker-compose.yml via `extends`, so there is nothing to keep in sync here.
+#
+# Usage (run from the repo root, with a populated .env — see .env.example):
+#   docker compose -f docker-compose.min.yml up -d                      # base lean stack (7)
+#   docker compose -f docker-compose.min.yml --profile clinical up -d   # + full clinical loop (10)
+#   docker compose -f docker-compose.min.yml ps
+#   docker compose -f docker-compose.min.yml logs -f ai-service
+#   docker compose -f docker-compose.min.yml --profile clinical down    # match the profile on down
+#
+# The `clinical` profile adds doctor-service, appointment-service, and
+# prescription-service. Enable it with --profile clinical (or COMPOSE_PROFILES=clinical).
+# Include the same --profile flag on `down` so those containers are also removed.
+#
+# Project name defaults to the repo directory, so this shares volumes (and fixed
+# container names) with the full docker-compose.yml — run one stack at a time.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  # ---------- core infrastructure ----------
+  postgres:
+    extends:
+      file: docker-compose.yml
+      service: postgres
+
+  zookeeper:
+    extends:
+      file: docker-compose.yml
+      service: zookeeper
+
+  kafka:
+    extends:
+      file: docker-compose.yml
+      service: kafka
+    depends_on:
+      - zookeeper
+
+  redis:
+    extends:
+      file: docker-compose.yml
+      service: redis
+
+  schema-registry:                 # unused at runtime; pulled in as a startup dep
+    extends:
+      file: docker-compose.yml
+      service: schema-registry
+    depends_on:
+      - kafka
+
+  # ---------- application services ----------
+  patient-service:                 # JWT issuer + patients/medical records
+    extends:
+      file: docker-compose.yml
+      service: patient-service
+    depends_on:
+      - postgres
+      - kafka
+      - redis
+
+  ai-service:                      # clinical decision support (TensorX)
+    extends:
+      file: docker-compose.yml
+      service: ai-service
+    depends_on:
+      - kafka
+
+  # ---------- full clinical loop (opt-in: --profile clinical) ----------
+  # These stay dormant on a plain `up`. Enable with:
+  #   docker compose -f docker-compose.min.yml --profile clinical up -d
+  doctor-service:
+    extends:
+      file: docker-compose.yml
+      service: doctor-service
+    profiles: [clinical]
+    depends_on:
+      - postgres
+      - kafka
+      - redis
+
+  appointment-service:
+    extends:
+      file: docker-compose.yml
+      service: appointment-service
+    profiles: [clinical]
+    depends_on:
+      - postgres
+      - kafka
+      - redis
+
+  prescription-service:
+    extends:
+      file: docker-compose.yml
+      service: prescription-service
+    profiles: [clinical]
+    depends_on:
+      - postgres
+      - kafka
+      - redis
+
+networks:
+  meditrack-network:
+    driver: bridge
+
+volumes:
+  zookeeper-data:
+  zookeeper-logs:
+  kafka-data:
+  postgres-data:
+  redis-data:
