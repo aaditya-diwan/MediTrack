@@ -27,7 +27,7 @@ export interface CreatePatientRequest {
   insurancePolicyNumber: string;
 }
 
-export interface UpdatePatientRequest extends CreatePatientRequest {}
+export type UpdatePatientRequest = CreatePatientRequest;
 
 export interface MedicalRecordResponse {
   recordId: string;
@@ -269,6 +269,169 @@ export interface CreatePrescriptionRequest {
   diagnosisCodes?: string;
   medications?: MedicationDraft[];
   labOrders?: PrescriptionLabOrderDraft[];
+}
+
+// --- AI Service ---
+export type AiSeverity = "NONE" | "MINOR" | "MODERATE" | "MAJOR" | "CONTRAINDICATED";
+export type AiUrgency = "ROUTINE" | "SOON" | "URGENT" | "EMERGENCY";
+export type IcdConfidence = "HIGH" | "MODERATE" | "LOW";
+
+export interface AiMedicationInput {
+  name: string;
+  dosage?: string;
+  frequency?: string;
+}
+
+export interface DrugInteraction {
+  drugA: string;
+  drugB: string;
+  severity: string;
+  mechanism: string;
+  clinicalConsequence: string;
+  management: string;
+}
+
+export interface AllergyConflict {
+  medication: string;
+  allergen: string;
+  severity: string;
+  note: string;
+}
+
+export interface PrescriptionSafetyResponse {
+  overallRisk: string;
+  requiresPharmacistReview: boolean;
+  summary: string;
+  recommendation: string;
+  interactions: DrugInteraction[];
+  allergyConflicts: AllergyConflict[];
+  modelUsed: string;
+  disclaimer: string;
+}
+
+export interface LabExplanationDetail {
+  testName: string;
+  interpretation: string;
+  explanation: string;
+  clinicalSignificance: string;
+}
+
+export interface LabExplanationResponse {
+  urgency: string;
+  overallSummary: string;
+  patientFriendlySummary: string;
+  suggestedFollowUp: string;
+  results: LabExplanationDetail[];
+  modelUsed: string;
+  disclaimer: string;
+}
+
+export interface SymptomTriageRequest {
+  symptoms: string;
+  duration?: string;
+  patientAgeYears?: number;
+  patientSex?: string;
+  knownConditions?: string[];
+  currentMedications?: string[];
+  knownAllergies?: string[];
+}
+
+export interface SymptomTriageResponse {
+  urgency: AiUrgency;
+  emergency: boolean;
+  recommendedSpecialty: string;
+  redFlags: string[];
+  rationale: string;
+  selfCareAdvice: string | null;
+  disclaimer: string;
+  modelUsed: string;
+  generatedAt: string;
+}
+
+export interface SoapNoteRequest {
+  consultationNotes: string;
+  patientAgeYears?: number;
+  patientSex?: string;
+  knownConditions?: string[];
+  vitals?: Record<string, string>;
+}
+
+export interface SoapNoteResponse {
+  subjective: string;
+  objective: string;
+  assessment: string;
+  plan: string;
+  assessmentProblems: string[];
+  followUp: string | null;
+  disclaimer: string;
+  modelUsed?: string;
+  generatedAt?: string;
+}
+
+export interface IcdCodesRequest {
+  clinicalNotes: string;
+  existingDiagnosis?: string;
+}
+
+export interface IcdCodeSuggestion {
+  code: string;
+  description: string;
+  confidence: IcdConfidence;
+  rationale: string;
+}
+
+export interface IcdCodesResponse {
+  suggestions: IcdCodeSuggestion[];
+  caveat: string;
+  modelUsed?: string;
+  generatedAt?: string;
+}
+
+export interface HistorySummaryRequest {
+  patientAgeYears?: number;
+  patientSex?: string;
+  conditions?: string[];
+  medications?: string[];
+  allergies?: string[];
+  recentLabResults?: { name: string; value?: string; flag?: string }[];
+  pastVisits?: { date?: string; note: string }[];
+}
+
+export interface HistorySummaryResponse {
+  keyConditions: string[];
+  activeMedications: string[];
+  criticalAllergies: string[];
+  recentAbnormalFindings: string[];
+  redFlags: string[];
+  narrativeSummary: string;
+  suggestedFollowUps: string[];
+  disclaimer: string;
+  modelUsed?: string;
+  generatedAt?: string;
+}
+
+/** Safety-check block returned by prescription issue (409 body or "safety" on 200). */
+export interface SafetyFinding {
+  type: string;
+  severity: string;
+  description: string;
+}
+
+export interface SafetyBlockResponse {
+  error: string;
+  severity: string;
+  summary: string;
+  findings: SafetyFinding[];
+  overrideAllowed: boolean;
+}
+
+export interface PrescriptionSafetyInfo {
+  checked: boolean;
+  severity: string;
+  summary: string;
+  requiresPharmacistReview: boolean;
+  overridden: boolean;
+  findings: SafetyFinding[] | null;
 }
 
 // --- Insurance Service ---

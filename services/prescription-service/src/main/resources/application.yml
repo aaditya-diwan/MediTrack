@@ -70,6 +70,12 @@ jwt:
   secret: ${JWT_SECRET:your-very-long-and-secure-secret-key-that-is-at-least-256-bits-long-local-only}
   expiration: 86400
 
+meditrack:
+  ai-service:
+    # Drug-safety screening endpoint host (ai-service). Shares JWT_SECRET above
+    # so this service can mint an internal token ai-service will accept.
+    base-url: ${AI_SERVICE_URL:http://localhost:8089}
+
 management:
   endpoints:
     web:
@@ -117,6 +123,10 @@ spring:
   redis:
     host: redis
     password: ${SPRING_REDIS_PASSWORD}
+
+meditrack:
+  ai-service:
+    base-url: ${AI_SERVICE_URL:http://ai-service:8089}
 
 management:
   zipkin:

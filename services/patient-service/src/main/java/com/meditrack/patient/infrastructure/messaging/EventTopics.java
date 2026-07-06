@@ -16,4 +16,6 @@ public final class EventTopics {
     public static final String PATIENT_EVENTS   = "patient-events";
 
     public static final String EVENT_TYPE_LAB_TEST_ORDERED = "lab.test.ordered.v1";
+    /** eventType discriminator carried inside patient-created events on the patient-events topic. */
+    public static final String EVENT_TYPE_PATIENT_CREATED = "patient.created.v1";
 }

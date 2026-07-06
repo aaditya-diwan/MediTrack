@@ -5,6 +5,17 @@ import { use } from "react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import {
+  AlertTriangle,
+  Download,
+  FlaskConical,
+  Pill,
+  Plus,
+  ShieldAlert,
+  ShieldCheck,
+  ShieldOff,
+  Trash2,
+} from "lucide-react";
+import {
   AppointmentResponse,
   AppointmentStatus,
   PatientResponse,
@@ -12,17 +23,54 @@ import {
   MedicationDraft,
   PrescriptionLabOrderDraft,
 } from "@/lib/types";
+import {
+  APPOINTMENT_STATUS,
+  Badge,
+  Button,
+  Card,
+  DetailLabel,
+  DetailValue,
+  EcgLoading,
+  EmptyState,
+  Field,
+  LAB_PRIORITY,
+  PRESCRIPTION_STATUS,
+  SEVERITY,
+  StatusBadge,
+  statusOf,
+} from "@/components/ui";
 
 type Tab = "patient" | "prescribe" | "history";
 
-const STATUS_STYLES: Record<AppointmentStatus, string> = {
-  PENDING: "bg-yellow-100 text-yellow-700",
-  CONFIRMED: "bg-blue-100 text-blue-700",
-  IN_PROGRESS: "bg-indigo-100 text-indigo-700",
-  COMPLETED: "bg-green-100 text-green-700",
-  CANCELLED: "bg-red-100 text-red-600",
-  NO_SHOW: "bg-slate-100 text-slate-500",
-};
+// --- AI safety screen contract (POST /api/prescriptions/{id}/issue) ---
+
+interface SafetyFinding {
+  type: string;
+  severity: string;
+  description: string;
+}
+
+interface PrescriptionSafety {
+  checked: boolean;
+  severity: string;
+  summary: string;
+  requiresPharmacistReview: boolean;
+  overridden: boolean;
+  overrideReason: string | null;
+  findings: SafetyFinding[] | null;
+}
+
+type RxWithSafety = PrescriptionResponse & { safety?: PrescriptionSafety | null };
+
+/** 409 body when the safety screen blocks issuing. */
+interface SafetyBlockBody {
+  error: string;
+  severity: string;
+  summary: string;
+  requiresPharmacistReview: boolean;
+  findings: SafetyFinding[];
+  overrideAllowed?: boolean;
+}
 
 const BLANK_MED: MedicationDraft = {
   medicationName: "", genericName: "", dosage: "", frequency: "",
@@ -32,6 +80,268 @@ const BLANK_LAB: PrescriptionLabOrderDraft = {
   testCode: "", testName: "", clinicalIndication: "", urgency: "ROUTINE",
 };
 
+const MED_FIELDS: { label: string; key: keyof MedicationDraft; placeholder: string; required?: boolean }[] = [
+  { label: "Name", key: "medicationName", placeholder: "e.g. Metformin", required: true },
+  { label: "Generic name", key: "genericName", placeholder: "e.g. Metformin HCl" },
+  { label: "Dosage", key: "dosage", placeholder: "e.g. 500mg", required: true },
+  { label: "Frequency", key: "frequency", placeholder: "e.g. Twice daily", required: true },
+  { label: "Duration", key: "duration", placeholder: "e.g. 30 days" },
+  { label: "Route", key: "route", placeholder: "e.g. Oral" },
+];
+
+const LAB_FIELDS: { label: string; key: keyof PrescriptionLabOrderDraft; placeholder: string; required?: boolean }[] = [
+  { label: "Test code", key: "testCode", placeholder: "e.g. CBC", required: true },
+  { label: "Test name", key: "testName", placeholder: "e.g. Complete Blood Count", required: true },
+  { label: "Clinical indication", key: "clinicalIndication", placeholder: "e.g. Suspected anaemia" },
+];
+
+function SectionHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <h3 className="font-display text-sm font-semibold uppercase tracking-wide text-ink-muted">
+      {children}
+    </h3>
+  );
+}
+
+function SafetyFindingsList({ findings }: { findings: SafetyFinding[] }) {
+  return (
+    <ul className="space-y-2">
+      {findings.map((f, i) => (
+        <li
+          key={i}
+          className="flex items-start gap-3 rounded-lg border border-line bg-card px-3 py-2"
+        >
+          <StatusBadge status={statusOf(SEVERITY, f.severity)} className="mt-0.5 shrink-0" />
+          <div className="min-w-0 text-sm">
+            <p className="text-ink">{f.description}</p>
+            <p className="mt-0.5 text-xs capitalize text-ink-faint">
+              {f.type.replace(/_/g, " ").toLowerCase()}
+            </p>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Outcome of the AI safety screen after a successful issue (200). */
+function SafetyOutcomePanel({ safety }: { safety: PrescriptionSafety }) {
+  if (!safety.checked) {
+    return (
+      <p className="flex items-center gap-2 rounded-lg border border-line bg-card-2 px-3 py-2 text-xs text-ink-muted">
+        <ShieldOff className="size-4 shrink-0 text-ink-faint" aria-hidden />
+        AI safety screen unavailable — issued without screening.
+      </p>
+    );
+  }
+
+  if (safety.severity === "NONE") {
+    return (
+      <p className="flex items-center gap-2 rounded-lg border border-ok/20 bg-ok-tint px-3 py-2 text-xs text-ok">
+        <ShieldCheck className="size-4 shrink-0" aria-hidden />
+        AI safety screen passed — no interactions found.
+      </p>
+    );
+  }
+
+  return (
+    <section
+      role="alert"
+      className="space-y-3 rounded-xl border border-warn/25 bg-warn-tint p-4"
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <AlertTriangle className="size-5 shrink-0 text-warn" aria-hidden />
+        <h3 className="font-display text-sm font-semibold text-ink">
+          AI safety screen flagged this prescription
+        </h3>
+        <StatusBadge status={statusOf(SEVERITY, safety.severity)} />
+        {safety.requiresPharmacistReview && (
+          <Badge tone="warn">Pharmacist review required</Badge>
+        )}
+        {safety.overridden && <Badge tone="danger">Issued via override</Badge>}
+      </div>
+      {safety.summary && <p className="text-sm text-ink">{safety.summary}</p>}
+      {safety.findings && safety.findings.length > 0 && (
+        <SafetyFindingsList findings={safety.findings} />
+      )}
+      {safety.overridden && safety.overrideReason && (
+        <p className="text-xs text-ink-muted">
+          Override reason: <span className="text-ink">{safety.overrideReason}</span>
+        </p>
+      )}
+    </section>
+  );
+}
+
+/** 409 block panel with the override-and-reissue flow. Clinical safety UI — severity must be unmissable. */
+function SafetyBlockPanel({
+  blocked,
+  overrideReason,
+  onReasonChange,
+  onOverride,
+  saving,
+}: {
+  blocked: SafetyBlockBody;
+  overrideReason: string;
+  onReasonChange: (v: string) => void;
+  onOverride: () => void;
+  saving: boolean;
+}) {
+  return (
+    <section
+      role="alert"
+      className="space-y-4 rounded-xl border-2 border-danger/40 bg-danger-tint p-5"
+    >
+      <div className="flex items-start gap-3">
+        <ShieldAlert className="size-8 shrink-0 text-danger" aria-hidden />
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="font-display text-base font-semibold text-danger">
+              Safety screen blocked this prescription
+            </h3>
+            <StatusBadge status={statusOf(SEVERITY, blocked.severity)} />
+            {blocked.requiresPharmacistReview && (
+              <Badge tone="danger">Pharmacist review required</Badge>
+            )}
+          </div>
+          <p className="mt-1 text-sm text-ink">{blocked.summary || blocked.error}</p>
+        </div>
+      </div>
+
+      {blocked.findings && blocked.findings.length > 0 && (
+        <SafetyFindingsList findings={blocked.findings} />
+      )}
+
+      {blocked.overrideAllowed && (
+        <div className="space-y-3 border-t border-danger/20 pt-4">
+          <Field
+            label="Clinical justification for override"
+            required
+            hint="Documented on the prescription record. Required to issue against the safety screen."
+          >
+            {(ids) => (
+              <textarea
+                {...ids}
+                rows={3}
+                value={overrideReason}
+                onChange={(e) => onReasonChange(e.target.value)}
+                placeholder="e.g. Benefit outweighs interaction risk; patient monitored weekly…"
+                className="input"
+              />
+            )}
+          </Field>
+          <Button
+            variant="danger"
+            onClick={onOverride}
+            loading={saving}
+            disabled={!overrideReason.trim()}
+          >
+            <ShieldAlert className="size-4" aria-hidden />
+            Override and issue anyway
+          </Button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function PatientTab({ patient }: { patient: PatientResponse | null }) {
+  if (!patient) {
+    return (
+      <EmptyState
+        title="Patient data unavailable"
+        hint="The patient record could not be loaded for this appointment."
+      />
+    );
+  }
+  return (
+    <div className="max-w-2xl space-y-5">
+      <Card>
+        <dl className="grid grid-cols-2 gap-x-8 gap-y-4">
+          <div>
+            <DetailLabel>MRN</DetailLabel>
+            <DetailValue mono>{patient.mrn}</DetailValue>
+          </div>
+          <div>
+            <DetailLabel>Date of birth</DetailLabel>
+            <DetailValue>{format(new Date(patient.dateOfBirth), "MMM d, yyyy")}</DetailValue>
+          </div>
+          <div>
+            <DetailLabel>Email</DetailLabel>
+            <DetailValue>{patient.email}</DetailValue>
+          </div>
+          <div>
+            <DetailLabel>Phone</DetailLabel>
+            <DetailValue mono>{patient.phoneNumber}</DetailValue>
+          </div>
+          <div>
+            <DetailLabel>Address</DetailLabel>
+            <DetailValue>{patient.address}</DetailValue>
+          </div>
+          <div>
+            <DetailLabel>Insurance</DetailLabel>
+            <DetailValue>{patient.insuranceProvider}</DetailValue>
+          </div>
+        </dl>
+      </Card>
+      {patient.medicalHistory && patient.medicalHistory.length > 0 && (
+        <section className="space-y-2">
+          <SectionHeading>Medical history</SectionHeading>
+          {patient.medicalHistory.slice(0, 5).map((r) => (
+            <div key={r.recordId} className="rounded-lg border border-line bg-card px-3 py-2 text-sm">
+              <span className="font-medium text-ink">{r.diagnosis}</span>
+              <span className="tabular ml-2 text-xs text-ink-faint">{r.date}</span>
+              {r.treatment && <p className="mt-0.5 text-xs text-ink-muted">{r.treatment}</p>}
+            </div>
+          ))}
+        </section>
+      )}
+    </div>
+  );
+}
+
+function HistoryTab({ prescriptions }: { prescriptions: RxWithSafety[] }) {
+  if (prescriptions.length === 0) {
+    return (
+      <EmptyState
+        icon={Pill}
+        title="No prescriptions on file"
+        hint="Prescriptions written for this patient will appear here."
+      />
+    );
+  }
+  return (
+    <div className="max-w-2xl space-y-3">
+      {prescriptions
+        .slice()
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .map((rx) => (
+          <Card key={rx.id} className="text-sm">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="tabular text-xs text-ink-faint">{rx.id.slice(0, 8)}…</span>
+              <StatusBadge status={statusOf(PRESCRIPTION_STATUS, rx.status)} />
+            </div>
+            {rx.consultationNotes && (
+              <p className="mb-2 line-clamp-2 text-xs text-ink-muted">{rx.consultationNotes}</p>
+            )}
+            {rx.medications && rx.medications.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {rx.medications.map((m) => (
+                  <Badge key={m.id} tone="neutral">
+                    {m.medicationName} {m.dosage}
+                  </Badge>
+                ))}
+              </div>
+            )}
+            <p className="mt-2 text-xs text-ink-faint">
+              {format(new Date(rx.createdAt), "MMM d, yyyy")}
+            </p>
+          </Card>
+        ))}
+    </div>
+  );
+}
+
 export default function ConsultationPage({
   params,
 }: {
@@ -40,9 +350,10 @@ export default function ConsultationPage({
   const { appointmentId } = use(params);
   const [appt, setAppt] = useState<AppointmentResponse | null>(null);
   const [patient, setPatient] = useState<PatientResponse | null>(null);
-  const [prescriptions, setPrescriptions] = useState<PrescriptionResponse[]>([]);
+  const [prescriptions, setPrescriptions] = useState<RxWithSafety[]>([]);
   const [tab, setTab] = useState<Tab>("patient");
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   const [consultationNotes, setConsultationNotes] = useState("");
   const [diagnosisCodes, setDiagnosisCodes] = useState("");
@@ -52,34 +363,69 @@ export default function ConsultationPage({
   const [newLab, setNewLab] = useState<PrescriptionLabOrderDraft>({ ...BLANK_LAB });
   const [showMedForm, setShowMedForm] = useState(false);
   const [showLabForm, setShowLabForm] = useState(false);
-  const [activePrescription, setActivePrescription] = useState<PrescriptionResponse | null>(null);
+  const [activePrescription, setActivePrescription] = useState<RxWithSafety | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // Contract B state: outcome of the safety screen and the 409 block payload.
+  const [safety, setSafety] = useState<PrescriptionSafety | null>(null);
+  const [blocked, setBlocked] = useState<SafetyBlockBody | null>(null);
+  const [overrideReason, setOverrideReason] = useState("");
+
+  const [reloadKey, setReloadKey] = useState(0);
+
   useEffect(() => {
+    let cancelled = false;
     fetch(`/api/appointments/${appointmentId}`)
-      .then((r) => r.json())
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then(async (a: AppointmentResponse) => {
+        if (cancelled) return;
         setAppt(a);
         const [patRes, rxRes] = await Promise.all([
-          fetch(`/api/patients/${a.patientId}`),
-          fetch(`/api/prescriptions/patient/${a.patientId}`),
+          fetch(`/api/patients/${a.patientId}`).catch(() => null),
+          fetch(`/api/prescriptions/patient/${a.patientId}`).catch(() => null),
         ]);
-        if (patRes.ok) setPatient(await patRes.json());
-        if (rxRes.ok) {
-          const rxData = await rxRes.json();
-          setPrescriptions(Array.isArray(rxData) ? rxData : []);
+        if (cancelled) return;
+        if (patRes?.ok) {
+          const patData = await patRes.json();
+          if (!cancelled) setPatient(patData);
         }
-        setLoading(false);
+        if (rxRes?.ok) {
+          const rxData = await rxRes.json();
+          if (!cancelled) setPrescriptions(Array.isArray(rxData) ? rxData : []);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setLoadError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
       });
-  }, [appointmentId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [appointmentId, reloadKey]);
+
+  const load = () => {
+    setLoading(true);
+    setLoadError(false);
+    setReloadKey((k) => k + 1);
+  };
 
   async function updateApptStatus(status: AppointmentStatus) {
-    const res = await fetch(`/api/appointments/${appointmentId}/status?status=${status}`, {
-      method: "PUT",
-    });
-    if (!res.ok) { toast.error("Failed to update status."); return; }
-    setAppt(await res.json());
-    toast.success(`Marked as ${status.replace(/_/g, " ")}`);
+    try {
+      const res = await fetch(
+        `/api/appointments/${appointmentId}/status?status=${status}`,
+        { method: "PUT" },
+      );
+      if (!res.ok) {
+        toast.error("Failed to update status.");
+        return;
+      }
+      setAppt(await res.json());
+      toast.success(`Marked as ${status.replace(/_/g, " ").toLowerCase()}`);
+    } catch {
+      toast.error("Network error — status not updated.");
+    }
   }
 
   function addMedication() {
@@ -105,51 +451,129 @@ export default function ConsultationPage({
   async function createDraft() {
     if (!appt) return;
     setSaving(true);
-    const res = await fetch("/api/prescriptions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        patientId: appt.patientId,
-        doctorId: appt.doctorId,
-        appointmentId: appt.id,
-        consultationNotes,
-        diagnosisCodes,
-        medications,
-        labOrders,
-      }),
-    });
-    setSaving(false);
-    if (!res.ok) { toast.error("Failed to create prescription."); return; }
-    setActivePrescription(await res.json());
-    toast.success("Draft created.");
+    try {
+      const res = await fetch("/api/prescriptions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          patientId: appt.patientId,
+          doctorId: appt.doctorId,
+          appointmentId: appt.id,
+          consultationNotes,
+          diagnosisCodes,
+          medications,
+          labOrders,
+        }),
+      });
+      if (!res.ok) {
+        toast.error("Failed to create prescription.");
+        return;
+      }
+      setActivePrescription(await res.json());
+      setSafety(null);
+      setBlocked(null);
+      toast.success("Draft created.");
+    } catch {
+      toast.error("Network error — draft not created.");
+    } finally {
+      setSaving(false);
+    }
   }
 
-  async function issuePrescription() {
+  /**
+   * Issue the draft. The backend runs an AI safety screen:
+   * - 200 → PrescriptionResponse.safety carries the outcome (shown below).
+   * - 409 → blocked; the payload lists findings and whether an override
+   *   (with a documented reason) is allowed. Re-POSTs with {override:true}.
+   */
+  async function issuePrescription(override?: { reason: string }) {
     if (!activePrescription) return;
     setSaving(true);
-    const res = await fetch(`/api/prescriptions/${activePrescription.id}/issue`, { method: "POST" });
-    setSaving(false);
-    if (!res.ok) { toast.error("Failed to issue."); return; }
-    const rx = await res.json();
-    setActivePrescription(rx);
-    setPrescriptions((prev) => [rx, ...prev.filter((p) => p.id !== rx.id)]);
-    toast.success("Prescription issued!");
+    try {
+      const res = await fetch(`/api/prescriptions/${activePrescription.id}/issue`, {
+        method: "POST",
+        ...(override
+          ? {
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                override: true,
+                overrideReason: override.reason,
+              }),
+            }
+          : {}),
+      });
+
+      if (res.status === 409) {
+        let body: SafetyBlockBody | null = null;
+        try {
+          body = await res.json();
+        } catch {
+          // Non-JSON body — fall through to generic handling.
+        }
+        if (body && typeof body.severity === "string") {
+          setBlocked(body);
+        } else {
+          toast.error(body?.error || "Issuing was blocked. Please review the draft.");
+        }
+        return;
+      }
+
+      if (!res.ok) {
+        toast.error("Failed to issue.");
+        return;
+      }
+
+      const rx: RxWithSafety = await res.json();
+      setActivePrescription(rx);
+      setSafety(rx.safety ?? null);
+      setBlocked(null);
+      setOverrideReason("");
+      setPrescriptions((prev) => [rx, ...prev.filter((p) => p.id !== rx.id)]);
+      toast.success(
+        rx.safety?.overridden
+          ? "Prescription issued with safety override."
+          : "Prescription issued!",
+      );
+    } catch {
+      toast.error("Network error — prescription not issued.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function sendToPharmacy() {
     if (!activePrescription) return;
-    const res = await fetch(`/api/prescriptions/${activePrescription.id}/send-pharmacy`, { method: "POST" });
-    if (!res.ok) { toast.error("Failed to send to pharmacy."); return; }
-    setActivePrescription(await res.json());
-    toast.success("Sent to pharmacy.");
+    try {
+      const res = await fetch(
+        `/api/prescriptions/${activePrescription.id}/send-pharmacy`,
+        { method: "POST" },
+      );
+      if (!res.ok) {
+        toast.error("Failed to send to pharmacy.");
+        return;
+      }
+      setActivePrescription(await res.json());
+      toast.success("Sent to pharmacy.");
+    } catch {
+      toast.error("Network error — not sent to pharmacy.");
+    }
   }
 
   async function sendToLab() {
     if (!activePrescription) return;
-    const res = await fetch(`/api/prescriptions/${activePrescription.id}/send-lab`, { method: "POST" });
-    if (!res.ok) { toast.error("Failed to send to lab."); return; }
-    setActivePrescription(await res.json());
-    toast.success("Sent to lab.");
+    try {
+      const res = await fetch(`/api/prescriptions/${activePrescription.id}/send-lab`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        toast.error("Failed to send to lab.");
+        return;
+      }
+      setActivePrescription(await res.json());
+      toast.success("Sent to lab.");
+    } catch {
+      toast.error("Network error — not sent to lab.");
+    }
   }
 
   function downloadPdf() {
@@ -160,57 +584,72 @@ export default function ConsultationPage({
     a.click();
   }
 
-  if (loading) return <p className="text-slate-500">Loading…</p>;
-  if (!appt) return <p className="text-red-500">Appointment not found.</p>;
+  if (loading) return <EcgLoading label="Loading consultation" />;
+
+  if (loadError || !appt) {
+    return (
+      <div
+        role="alert"
+        className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-danger/25 bg-danger-tint px-4 py-3"
+      >
+        <div className="flex items-center gap-2 text-sm text-danger">
+          <AlertTriangle className="size-4 shrink-0" aria-hidden />
+          Failed to load this consultation.
+        </div>
+        <Button variant="secondary" size="sm" onClick={load}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
 
   const isIssued = activePrescription && activePrescription.status !== "DRAFT";
 
   return (
     <div>
-      <div className="flex items-start justify-between mb-4">
+      <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-slate-800">
-            {patient ? `${patient.firstName} ${patient.lastName}` : `Patient …${appt.patientId.slice(-6)}`}
+          <p className="mb-1 text-[11px] font-medium uppercase tracking-[0.14em] text-brand-ink">
+            Consultation
+          </p>
+          <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
+            {patient
+              ? `${patient.firstName} ${patient.lastName}`
+              : `Patient …${appt.patientId.slice(-6)}`}
           </h1>
-          <p className="text-slate-500 text-sm mt-0.5">
+          <p className="mt-0.5 text-sm text-ink-muted">
             {format(new Date(appt.scheduledAt), "MMM d, yyyy 'at' h:mm a")} ·{" "}
             {appt.type.replace(/_/g, " ").toLowerCase()}
             {appt.reasonForVisit ? ` · ${appt.reasonForVisit}` : ""}
           </p>
         </div>
-        <span className={`text-xs px-3 py-1 rounded-full font-medium ${STATUS_STYLES[appt.status]}`}>
-          {appt.status.replace(/_/g, " ")}
-        </span>
-      </div>
+        <StatusBadge status={statusOf(APPOINTMENT_STATUS, appt.status)} />
+      </header>
 
-      <div className="flex gap-2 mb-5">
+      <div className="mb-5 flex gap-2">
         {appt.status === "CONFIRMED" && (
-          <button
-            onClick={() => updateApptStatus("IN_PROGRESS")}
-            className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
-          >
-            Start Consultation
-          </button>
+          <Button size="sm" onClick={() => updateApptStatus("IN_PROGRESS")}>
+            Start consultation
+          </Button>
         )}
         {appt.status === "IN_PROGRESS" && (
-          <button
-            onClick={() => updateApptStatus("COMPLETED")}
-            className="text-xs px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors"
-          >
-            Mark Completed
-          </button>
+          <Button size="sm" onClick={() => updateApptStatus("COMPLETED")}>
+            Mark completed
+          </Button>
         )}
       </div>
 
-      <div className="flex gap-1 border-b border-slate-200 mb-5">
+      <div role="tablist" aria-label="Consultation sections" className="mb-5 flex gap-1 border-b border-line">
         {(["patient", "prescribe", "history"] as Tab[]).map((t) => (
           <button
             key={t}
+            role="tab"
+            aria-selected={tab === t}
             onClick={() => setTab(t)}
-            className={`px-4 py-2 text-sm transition-colors ${
+            className={`-mb-px px-4 py-2 text-sm transition-colors ${
               tab === t
-                ? "border-b-2 border-slate-800 text-slate-800 font-medium"
-                : "text-slate-500 hover:text-slate-700"
+                ? "border-b-2 border-brand font-medium text-brand-ink"
+                : "text-ink-muted hover:text-ink"
             }`}
           >
             {t === "prescribe" ? "Write Prescription" : t === "history" ? "Rx History" : "Patient"}
@@ -218,266 +657,263 @@ export default function ConsultationPage({
         ))}
       </div>
 
-      {tab === "patient" && (
-        <div className="space-y-4">
-          {patient ? (
-            <>
-              <dl className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm">
-                {[
-                  ["MRN", patient.mrn],
-                  ["DOB", format(new Date(patient.dateOfBirth), "MMM d, yyyy")],
-                  ["Email", patient.email],
-                  ["Phone", patient.phoneNumber],
-                  ["Address", patient.address],
-                  ["Insurance", patient.insuranceProvider],
-                ].map(([label, val]) => (
-                  <div key={label}>
-                    <dt className="text-slate-400">{label}</dt>
-                    <dd className="text-slate-800 font-medium">{val}</dd>
-                  </div>
-                ))}
-              </dl>
-              {patient.medicalHistory && patient.medicalHistory.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-semibold text-slate-700 mb-2 mt-4">Medical History</h3>
-                  <div className="space-y-2">
-                    {patient.medicalHistory.slice(0, 5).map((r) => (
-                      <div key={r.recordId} className="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white">
-                        <span className="font-medium text-slate-800">{r.diagnosis}</span>
-                        <span className="text-slate-400 ml-2 text-xs">{r.date}</span>
-                        {r.treatment && <p className="text-slate-500 mt-0.5 text-xs">{r.treatment}</p>}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </>
-          ) : (
-            <p className="text-slate-500 text-sm">Patient data unavailable.</p>
-          )}
-        </div>
-      )}
+      {tab === "patient" && <PatientTab patient={patient} />}
 
       {tab === "prescribe" && (
-        <div className="space-y-5 max-w-2xl">
+        <div className="max-w-2xl space-y-5">
           {activePrescription && (
-            <div className={`text-sm px-4 py-2 rounded-lg border ${
-              activePrescription.status === "DRAFT"
-                ? "border-yellow-300 bg-yellow-50 text-yellow-800"
-                : "border-green-300 bg-green-50 text-green-800"
-            }`}>
-              Prescription <span className="font-mono text-xs">{activePrescription.id.slice(0, 8)}…</span>{" "}
-              — <span className="font-medium">{activePrescription.status}</span>
+            <div
+              className={`flex items-center gap-2 rounded-lg border px-4 py-2 text-sm ${
+                activePrescription.status === "DRAFT"
+                  ? "border-warn/25 bg-warn-tint text-ink"
+                  : "border-ok/20 bg-ok-tint text-ink"
+              }`}
+            >
+              <span>
+                Prescription{" "}
+                <span className="tabular text-xs">{activePrescription.id.slice(0, 8)}…</span>
+              </span>
+              <StatusBadge
+                status={statusOf(PRESCRIPTION_STATUS, activePrescription.status)}
+              />
             </div>
           )}
 
           {!activePrescription && (
             <>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Consultation Notes</label>
-                <textarea rows={4} value={consultationNotes} onChange={(e) => setConsultationNotes(e.target.value)}
-                  placeholder="SOAP notes, clinical observations…" className="input" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Diagnosis Codes (ICD-10)</label>
-                <input value={diagnosisCodes} onChange={(e) => setDiagnosisCodes(e.target.value)}
-                  placeholder="e.g. J06.9, E11.9" className="input" />
-              </div>
+              <Field label="Consultation notes">
+                {(ids) => (
+                  <textarea
+                    {...ids}
+                    rows={4}
+                    value={consultationNotes}
+                    onChange={(e) => setConsultationNotes(e.target.value)}
+                    placeholder="SOAP notes, clinical observations…"
+                    className="input"
+                  />
+                )}
+              </Field>
+              <Field label="Diagnosis codes (ICD-10)">
+                {(ids) => (
+                  <input
+                    {...ids}
+                    value={diagnosisCodes}
+                    onChange={(e) => setDiagnosisCodes(e.target.value)}
+                    placeholder="e.g. J06.9, E11.9"
+                    className="input tabular"
+                  />
+                )}
+              </Field>
 
               {/* Medications */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-sm font-semibold text-slate-700">Medications</h3>
-                  <button onClick={() => setShowMedForm(!showMedForm)}
-                    className="text-xs border border-slate-300 rounded-lg px-2 py-1 hover:bg-slate-100">
-                    + Add Medication
-                  </button>
+              <section>
+                <div className="mb-2 flex items-center justify-between">
+                  <SectionHeading>Medications</SectionHeading>
+                  <Button variant="secondary" size="sm" onClick={() => setShowMedForm(!showMedForm)}>
+                    <Plus className="size-3.5" aria-hidden />
+                    Add medication
+                  </Button>
                 </div>
                 {showMedForm && (
-                  <div className="border border-slate-200 rounded-xl p-4 bg-slate-50 space-y-3 mb-3">
+                  <div className="mb-3 space-y-3 rounded-xl border border-line bg-card-2 p-4">
                     <div className="grid grid-cols-2 gap-3">
-                      {[
-                        { label: "Name *", key: "medicationName", placeholder: "e.g. Metformin" },
-                        { label: "Generic Name", key: "genericName", placeholder: "e.g. Metformin HCl" },
-                        { label: "Dosage *", key: "dosage", placeholder: "e.g. 500mg" },
-                        { label: "Frequency *", key: "frequency", placeholder: "e.g. Twice daily" },
-                        { label: "Duration", key: "duration", placeholder: "e.g. 30 days" },
-                        { label: "Route", key: "route", placeholder: "e.g. Oral" },
-                      ].map(({ label, key, placeholder }) => (
-                        <div key={key}>
-                          <label className="block text-xs font-medium text-slate-600 mb-1">{label}</label>
-                          <input value={(newMed as unknown as Record<string, string>)[key]}
-                            onChange={(e) => setNewMed({ ...newMed, [key]: e.target.value })}
-                            placeholder={placeholder} className="input text-xs" />
-                        </div>
+                      {MED_FIELDS.map(({ label, key, placeholder, required }) => (
+                        <Field key={key} label={label} required={required}>
+                          {(ids) => (
+                            <input
+                              {...ids}
+                              value={newMed[key]}
+                              onChange={(e) => setNewMed({ ...newMed, [key]: e.target.value })}
+                              placeholder={placeholder}
+                              className="input text-xs"
+                            />
+                          )}
+                        </Field>
                       ))}
                     </div>
-                    <div>
-                      <label className="block text-xs font-medium text-slate-600 mb-1">Instructions</label>
-                      <input value={newMed.instructions}
-                        onChange={(e) => setNewMed({ ...newMed, instructions: e.target.value })}
-                        placeholder="e.g. Take with food" className="input text-xs" />
-                    </div>
+                    <Field label="Instructions">
+                      {(ids) => (
+                        <input
+                          {...ids}
+                          value={newMed.instructions}
+                          onChange={(e) =>
+                            setNewMed({ ...newMed, instructions: e.target.value })
+                          }
+                          placeholder="e.g. Take with food"
+                          className="input text-xs"
+                        />
+                      )}
+                    </Field>
                     <div className="flex gap-2">
-                      <button onClick={addMedication} className="bg-slate-800 text-white text-xs px-3 py-1.5 rounded-lg">Add</button>
-                      <button onClick={() => setShowMedForm(false)} className="text-slate-500 text-xs px-3 py-1.5 rounded-lg">Cancel</button>
+                      <Button size="sm" onClick={addMedication}>
+                        Add
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => setShowMedForm(false)}>
+                        Cancel
+                      </Button>
                     </div>
                   </div>
                 )}
-                {medications.length === 0
-                  ? <p className="text-slate-400 text-xs">No medications added.</p>
-                  : (
-                    <div className="space-y-1">
-                      {medications.map((m, i) => (
-                        <div key={i} className="flex items-center justify-between text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white">
-                          <div>
-                            <span className="font-medium">{m.medicationName}</span>
-                            <span className="text-slate-400 ml-2 text-xs">{m.dosage} · {m.frequency}{m.duration ? ` · ${m.duration}` : ""}</span>
-                          </div>
-                          <button onClick={() => setMedications((p) => p.filter((_, j) => j !== i))}
-                            className="text-red-400 hover:text-red-600 text-xs ml-4">remove</button>
+                {medications.length === 0 ? (
+                  <p className="text-xs text-ink-faint">No medications added.</p>
+                ) : (
+                  <ul className="space-y-1">
+                    {medications.map((m, i) => (
+                      <li
+                        key={i}
+                        className="flex items-center justify-between rounded-lg border border-line bg-card px-3 py-2 text-sm"
+                      >
+                        <div className="flex min-w-0 items-center gap-2">
+                          <Pill className="size-4 shrink-0 text-brand-ink" aria-hidden />
+                          <span className="font-medium text-ink">{m.medicationName}</span>
+                          <span className="tabular truncate text-xs text-ink-muted">
+                            {m.dosage} · {m.frequency}
+                            {m.duration ? ` · ${m.duration}` : ""}
+                          </span>
                         </div>
-                      ))}
-                    </div>
-                  )}
-              </div>
+                        <button
+                          type="button"
+                          onClick={() => setMedications((p) => p.filter((_, j) => j !== i))}
+                          aria-label={`Remove ${m.medicationName}`}
+                          className="ml-4 rounded p-1 text-ink-faint transition-colors hover:text-danger"
+                        >
+                          <Trash2 className="size-4" aria-hidden />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
 
-              {/* Lab Orders */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-sm font-semibold text-slate-700">Lab Orders</h3>
-                  <button onClick={() => setShowLabForm(!showLabForm)}
-                    className="text-xs border border-slate-300 rounded-lg px-2 py-1 hover:bg-slate-100">
-                    + Add Lab Order
-                  </button>
+              {/* Lab orders */}
+              <section>
+                <div className="mb-2 flex items-center justify-between">
+                  <SectionHeading>Lab orders</SectionHeading>
+                  <Button variant="secondary" size="sm" onClick={() => setShowLabForm(!showLabForm)}>
+                    <Plus className="size-3.5" aria-hidden />
+                    Add lab order
+                  </Button>
                 </div>
                 {showLabForm && (
-                  <div className="border border-slate-200 rounded-xl p-4 bg-slate-50 space-y-3 mb-3">
+                  <div className="mb-3 space-y-3 rounded-xl border border-line bg-card-2 p-4">
                     <div className="grid grid-cols-2 gap-3">
-                      {[
-                        { label: "Test Code *", key: "testCode", placeholder: "e.g. CBC" },
-                        { label: "Test Name *", key: "testName", placeholder: "e.g. Complete Blood Count" },
-                        { label: "Clinical Indication", key: "clinicalIndication", placeholder: "e.g. Suspected anaemia" },
-                      ].map(({ label, key, placeholder }) => (
-                        <div key={key}>
-                          <label className="block text-xs font-medium text-slate-600 mb-1">{label}</label>
-                          <input value={(newLab as unknown as Record<string, string>)[key]}
-                            onChange={(e) => setNewLab({ ...newLab, [key]: e.target.value })}
-                            placeholder={placeholder} className="input text-xs" />
-                        </div>
+                      {LAB_FIELDS.map(({ label, key, placeholder, required }) => (
+                        <Field key={key} label={label} required={required}>
+                          {(ids) => (
+                            <input
+                              {...ids}
+                              value={newLab[key]}
+                              onChange={(e) => setNewLab({ ...newLab, [key]: e.target.value })}
+                              placeholder={placeholder}
+                              className="input text-xs"
+                            />
+                          )}
+                        </Field>
                       ))}
-                      <div>
-                        <label className="block text-xs font-medium text-slate-600 mb-1">Urgency</label>
-                        <select value={newLab.urgency} onChange={(e) => setNewLab({ ...newLab, urgency: e.target.value })} className="input text-xs">
-                          <option value="ROUTINE">Routine</option>
-                          <option value="URGENT">Urgent</option>
-                          <option value="STAT">STAT</option>
-                        </select>
-                      </div>
+                      <Field label="Urgency">
+                        {(ids) => (
+                          <select
+                            {...ids}
+                            value={newLab.urgency}
+                            onChange={(e) => setNewLab({ ...newLab, urgency: e.target.value })}
+                            className="input text-xs"
+                          >
+                            <option value="ROUTINE">Routine</option>
+                            <option value="URGENT">Urgent</option>
+                            <option value="STAT">STAT</option>
+                          </select>
+                        )}
+                      </Field>
                     </div>
                     <div className="flex gap-2">
-                      <button onClick={addLabOrder} className="bg-slate-800 text-white text-xs px-3 py-1.5 rounded-lg">Add</button>
-                      <button onClick={() => setShowLabForm(false)} className="text-slate-500 text-xs px-3 py-1.5 rounded-lg">Cancel</button>
+                      <Button size="sm" onClick={addLabOrder}>
+                        Add
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => setShowLabForm(false)}>
+                        Cancel
+                      </Button>
                     </div>
                   </div>
                 )}
-                {labOrders.length === 0
-                  ? <p className="text-slate-400 text-xs">No lab orders added.</p>
-                  : (
-                    <div className="space-y-1">
-                      {labOrders.map((l, i) => (
-                        <div key={i} className="flex items-center justify-between text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white">
-                          <div>
-                            <span className="font-medium">{l.testName}</span>
-                            <span className="text-slate-400 ml-2 text-xs">{l.testCode}</span>
-                            <span className={`ml-2 text-xs px-1.5 py-0.5 rounded ${
-                              l.urgency === "STAT" ? "bg-red-100 text-red-600"
-                              : l.urgency === "URGENT" ? "bg-amber-100 text-amber-700"
-                              : "bg-slate-100 text-slate-500"
-                            }`}>{l.urgency}</span>
-                          </div>
-                          <button onClick={() => setLabOrders((p) => p.filter((_, j) => j !== i))}
-                            className="text-red-400 hover:text-red-600 text-xs ml-4">remove</button>
+                {labOrders.length === 0 ? (
+                  <p className="text-xs text-ink-faint">No lab orders added.</p>
+                ) : (
+                  <ul className="space-y-1">
+                    {labOrders.map((l, i) => (
+                      <li
+                        key={i}
+                        className="flex items-center justify-between rounded-lg border border-line bg-card px-3 py-2 text-sm"
+                      >
+                        <div className="flex min-w-0 items-center gap-2">
+                          <FlaskConical className="size-4 shrink-0 text-brand-ink" aria-hidden />
+                          <span className="font-medium text-ink">{l.testName}</span>
+                          <span className="tabular text-xs text-ink-muted">{l.testCode}</span>
+                          <StatusBadge status={statusOf(LAB_PRIORITY, l.urgency)} />
                         </div>
-                      ))}
-                    </div>
-                  )}
-              </div>
+                        <button
+                          type="button"
+                          onClick={() => setLabOrders((p) => p.filter((_, j) => j !== i))}
+                          aria-label={`Remove ${l.testName}`}
+                          className="ml-4 rounded p-1 text-ink-faint transition-colors hover:text-danger"
+                        >
+                          <Trash2 className="size-4" aria-hidden />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
 
-              <button onClick={createDraft} disabled={saving}
-                className="bg-slate-800 text-white text-sm px-6 py-2 rounded-lg hover:bg-slate-700 disabled:opacity-40 transition-colors">
-                {saving ? "Saving…" : "Create Prescription Draft"}
-              </button>
+              <Button onClick={createDraft} loading={saving}>
+                Create prescription draft
+              </Button>
             </>
           )}
 
           {activePrescription && (
-            <div className="flex gap-3 flex-wrap">
-              {activePrescription.status === "DRAFT" && (
-                <button onClick={issuePrescription} disabled={saving}
-                  className="bg-green-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-green-700 disabled:opacity-40">
-                  {saving ? "…" : "Issue Prescription"}
-                </button>
+            <>
+              {blocked && (
+                <SafetyBlockPanel
+                  blocked={blocked}
+                  overrideReason={overrideReason}
+                  onReasonChange={setOverrideReason}
+                  onOverride={() => issuePrescription({ reason: overrideReason.trim() })}
+                  saving={saving}
+                />
               )}
-              {isIssued && (
-                <>
-                  <button onClick={sendToPharmacy}
-                    className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100">
-                    Send to Pharmacy
-                  </button>
-                  {activePrescription.labOrders && activePrescription.labOrders.length > 0 && (
-                    <button onClick={sendToLab}
-                      className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100">
-                      Send to Lab
-                    </button>
-                  )}
-                  <button onClick={downloadPdf}
-                    className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100">
-                    Download PDF
-                  </button>
-                </>
-              )}
-            </div>
+
+              {!blocked && safety && <SafetyOutcomePanel safety={safety} />}
+
+              <div className="flex flex-wrap gap-3">
+                {activePrescription.status === "DRAFT" && !blocked && (
+                  <Button onClick={() => issuePrescription()} loading={saving}>
+                    Issue prescription
+                  </Button>
+                )}
+                {isIssued && (
+                  <>
+                    <Button variant="secondary" onClick={sendToPharmacy}>
+                      Send to pharmacy
+                    </Button>
+                    {activePrescription.labOrders &&
+                      activePrescription.labOrders.length > 0 && (
+                        <Button variant="secondary" onClick={sendToLab}>
+                          Send to lab
+                        </Button>
+                      )}
+                    <Button variant="secondary" onClick={downloadPdf}>
+                      <Download className="size-4" aria-hidden />
+                      Download PDF
+                    </Button>
+                  </>
+                )}
+              </div>
+            </>
           )}
         </div>
       )}
 
-      {tab === "history" && (
-        <div className="space-y-3 max-w-2xl">
-          {prescriptions.length === 0
-            ? <p className="text-slate-500 text-sm">No prescriptions on file.</p>
-            : prescriptions
-                .slice()
-                .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-                .map((rx) => (
-                  <div key={rx.id} className="border border-slate-200 rounded-xl p-4 bg-white text-sm">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-mono text-xs text-slate-400">{rx.id.slice(0, 8)}…</span>
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                        rx.status === "ISSUED" || rx.status === "FULFILLED" ? "bg-green-100 text-green-700"
-                        : rx.status === "DRAFT" ? "bg-yellow-100 text-yellow-700"
-                        : "bg-blue-100 text-blue-700"
-                      }`}>{rx.status}</span>
-                    </div>
-                    {rx.consultationNotes && (
-                      <p className="text-slate-600 text-xs mb-2 line-clamp-2">{rx.consultationNotes}</p>
-                    )}
-                    {rx.medications && rx.medications.length > 0 && (
-                      <div className="flex flex-wrap gap-1">
-                        {rx.medications.map((m) => (
-                          <span key={m.id} className="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded">
-                            {m.medicationName} {m.dosage}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                    <p className="text-slate-400 text-xs mt-2">
-                      {format(new Date(rx.createdAt), "MMM d, yyyy")}
-                    </p>
-                  </div>
-                ))}
-        </div>
-      )}
+      {tab === "history" && <HistoryTab prescriptions={prescriptions} />}
     </div>
   );
 }

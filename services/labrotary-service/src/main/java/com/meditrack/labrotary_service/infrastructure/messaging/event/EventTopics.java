@@ -20,4 +20,5 @@ public final class EventTopics {
 
     // Topics consumed from other services
     public static final String PATIENT_EVENTS_CONSUMER_TYPE = "lab.test.ordered.v1";
+    public static final String PRESCRIPTION_SENT_TO_LAB = "prescription.sent_to_lab.v1";
 }

@@ -29,4 +29,9 @@ public class LabOrderRepositoryImpl implements LabOrderRepository {
     public Optional<LabOrder> findById(UUID id) {
         return jpaRepository.findById(id).map(mapper::toDomain);
     }
+
+    @Override
+    public boolean existsByExternalReferenceAndTestCode(String externalReference, String testCode) {
+        return jpaRepository.existsByExternalReferenceAndTests_TestCode(externalReference, testCode);
+    }
 }

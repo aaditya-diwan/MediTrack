@@ -36,6 +36,7 @@ public class PersistenceLabOrderMapper {
         entity.setOrderingProviderId(domain.getOrderingPhysicianId());
         entity.setOrderingProviderName(domain.getOrderingProviderName());
         entity.setOrderingFacilityId(domain.getFacilityId());
+        entity.setExternalReference(domain.getExternalReference());
         entity.setOrderDate(domain.getOrderTimestamp() != null ? domain.getOrderTimestamp() : OffsetDateTime.now());
         entity.setPriority(domain.getPriority());
         // RECEIVED is not a valid lab_orders status (CHECK constraint) — persist as PENDING.
@@ -78,6 +79,7 @@ public class PersistenceLabOrderMapper {
                 .orderingPhysicianId(entity.getOrderingProviderId())
                 .orderingProviderName(entity.getOrderingProviderName())
                 .facilityId(entity.getOrderingFacilityId())
+                .externalReference(entity.getExternalReference())
                 .orderTimestamp(entity.getOrderDate())
                 .priority(entity.getPriority())
                 .status(entity.getStatus())

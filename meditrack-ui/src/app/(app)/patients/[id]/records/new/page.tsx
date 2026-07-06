@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { toast } from "sonner";
+import { Button, Card, Field, PageHeader } from "@/components/ui";
 
 const schema = z.object({
   diagnosis: z.string().min(1),
@@ -29,82 +31,80 @@ export default function NewMedicalRecordPage({
   } = useForm<FormData>({ resolver: zodResolver(schema) });
 
   async function onSubmit(data: FormData) {
-    const res = await fetch("/api/medical-records/", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...data, patientId: id }),
-    });
-    if (!res.ok) {
-      setError("root", { message: "Failed to create medical record." });
-      return;
+    try {
+      const res = await fetch("/api/medical-records/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...data, patientId: id }),
+      });
+      if (!res.ok) {
+        setError("root", { message: "Failed to create medical record." });
+        return;
+      }
+      toast.success("Medical record saved.");
+      router.push(`/patients/${id}`);
+    } catch {
+      setError("root", {
+        message: "Could not reach the server. Please try again.",
+      });
     }
-    router.push(`/patients/${id}`);
   }
 
   return (
     <div className="max-w-lg">
-      <h1 className="text-2xl font-bold text-slate-800 mb-6">
-        Add Medical Record
-      </h1>
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">
-            Diagnosis
-          </label>
-          <input
-            {...register("diagnosis")}
-            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
-          />
-          {errors.diagnosis && (
-            <p className="text-red-500 text-xs mt-1">{errors.diagnosis.message}</p>
+      <PageHeader
+        eyebrow="Patients"
+        title="Add medical record"
+        description="Document a diagnosis and treatment for this patient's chart."
+      />
+      <Card>
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+          <Field label="Diagnosis" required error={errors.diagnosis?.message}>
+            {(ids) => (
+              <input className="input" {...register("diagnosis")} {...ids} />
+            )}
+          </Field>
+          <Field label="Treatment" required error={errors.treatment?.message}>
+            {(ids) => (
+              <textarea
+                rows={4}
+                className="input"
+                {...register("treatment")}
+                {...ids}
+              />
+            )}
+          </Field>
+          <Field label="Date" required error={errors.date?.message}>
+            {(ids) => (
+              <input
+                type="date"
+                className="input"
+                {...register("date")}
+                {...ids}
+              />
+            )}
+          </Field>
+
+          {errors.root && (
+            <div className="rounded-lg border border-danger/25 bg-danger-tint px-3 py-2">
+              <p className="text-sm text-danger">{errors.root.message}</p>
+            </div>
           )}
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">
-            Treatment
-          </label>
-          <textarea
-            {...register("treatment")}
-            rows={4}
-            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
-          />
-          {errors.treatment && (
-            <p className="text-red-500 text-xs mt-1">{errors.treatment.message}</p>
-          )}
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">
-            Date
-          </label>
-          <input
-            type="date"
-            {...register("date")}
-            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
-          />
-          {errors.date && (
-            <p className="text-red-500 text-xs mt-1">{errors.date.message}</p>
-          )}
-        </div>
-        {errors.root && (
-          <p className="text-red-500 text-sm">{errors.root.message}</p>
-        )}
-        <div className="flex gap-3 pt-2">
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="bg-slate-800 text-white text-sm px-6 py-2 rounded-lg hover:bg-slate-700 disabled:opacity-50 transition-colors"
-          >
-            {isSubmitting ? "Saving…" : "Save Record"}
-          </button>
-          <button
-            type="button"
-            onClick={() => router.back()}
-            className="text-sm px-6 py-2 rounded-lg border border-slate-300 hover:bg-slate-100 transition-colors"
-          >
-            Cancel
-          </button>
-        </div>
-      </form>
+
+          <div className="flex gap-3 pt-2">
+            <Button type="submit" loading={isSubmitting}>
+              Save record
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => router.back()}
+            >
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </Card>
     </div>
   );
 }

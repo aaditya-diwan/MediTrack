@@ -42,6 +42,10 @@ public class LabOrderEntity {
     @Column(name = "ordering_facility_id")
     private String orderingFacilityId;
 
+    /** Reference to the originating record in another service (e.g. prescriptionId), used for idempotency. */
+    @Column(name = "external_reference")
+    private String externalReference;
+
     @Column(name = "order_date", nullable = false)
     private OffsetDateTime orderDate;
 

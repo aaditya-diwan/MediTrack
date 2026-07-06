@@ -1,19 +1,21 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useEffect, useState, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { format, isToday, isTomorrow, parseISO } from "date-fns";
-import { AppointmentResponse, AppointmentStatus } from "@/lib/types";
-
-const STATUS_STYLES: Record<AppointmentStatus, string> = {
-  PENDING: "bg-yellow-100 text-yellow-700",
-  CONFIRMED: "bg-blue-100 text-blue-700",
-  IN_PROGRESS: "bg-indigo-100 text-indigo-700",
-  COMPLETED: "bg-green-100 text-green-700",
-  CANCELLED: "bg-red-100 text-red-600",
-  NO_SHOW: "bg-slate-100 text-slate-500",
-};
+import { AlertTriangle, CalendarClock } from "lucide-react";
+import { AppointmentResponse } from "@/lib/types";
+import {
+  APPOINTMENT_STATUS,
+  Button,
+  EmptyState,
+  ListSkeleton,
+  PageHeader,
+  StatusBadge,
+  statusOf,
+} from "@/components/ui";
+import { DoctorPicker } from "@/components/DoctorPicker";
 
 function dayLabel(dateStr: string) {
   const d = parseISO(dateStr);
@@ -22,34 +24,94 @@ function dayLabel(dateStr: string) {
   return format(d, "EEE, MMM d");
 }
 
+function AppointmentRow({ appt }: { appt: AppointmentResponse }) {
+  return (
+    <li className="relative pl-6">
+      <span
+        aria-hidden
+        className="absolute left-0 top-5 size-2.5 -translate-x-1/2 rounded-full border-2 border-brand bg-card"
+      />
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-card px-4 py-3">
+        <div className="flex min-w-0 items-baseline gap-3 text-sm">
+          <span className="tabular shrink-0 font-medium text-ink">
+            {format(new Date(appt.scheduledAt), "h:mm a")}
+          </span>
+          <span className="tabular shrink-0 text-xs text-ink-muted">
+            Patient …{appt.patientId.slice(-6)}
+          </span>
+          <span className="capitalize text-ink-muted">
+            {appt.type.replace(/_/g, " ").toLowerCase()}
+          </span>
+          {appt.reasonForVisit && (
+            <span className="truncate text-xs text-ink-faint">
+              — {appt.reasonForVisit}
+            </span>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <StatusBadge status={statusOf(APPOINTMENT_STATUS, appt.status)} />
+          <Link
+            href={`/doctor-dashboard/consultation/${appt.id}`}
+            className="inline-flex items-center rounded-lg border border-line-strong bg-card px-2.5 py-1.5 text-xs font-medium text-ink transition-colors hover:border-brand hover:text-brand-ink"
+          >
+            Open consultation
+          </Link>
+        </div>
+      </div>
+    </li>
+  );
+}
+
+function Timeline({ appointments }: { appointments: AppointmentResponse[] }) {
+  return (
+    <ul className="space-y-2 border-l border-line-strong">
+      {appointments.map((a) => (
+        <AppointmentRow key={a.id} appt={a} />
+      ))}
+    </ul>
+  );
+}
+
 function DoctorSchedule() {
   const searchParams = useSearchParams();
-  const [input, setInput] = useState(searchParams.get("doctorId") ?? "");
-  const [appointments, setAppointments] = useState<AppointmentResponse[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [searched, setSearched] = useState(false);
-
-  async function load(id: string) {
-    if (!id.trim()) return;
-    setLoading(true);
-    setSearched(true);
-    const res = await fetch(`/api/appointments/doctor/${id}`);
-    setLoading(false);
-    if (res.ok) {
-      const data = await res.json();
-      setAppointments(Array.isArray(data) ? data : []);
-    }
-  }
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    load(input);
-  }
-
-  const active = appointments.filter((a) => a.status !== "CANCELLED" && a.status !== "NO_SHOW");
-  const sorted = active.slice().sort(
-    (a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()
+  const [doctorId, setDoctorId] = useState<string | null>(
+    searchParams.get("doctorId"),
   );
+  const [appointments, setAppointments] = useState<AppointmentResponse[]>([]);
+  const [error, setError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
+  const requestKey = doctorId ? `${doctorId}:${reloadKey}` : null;
+  const loading = requestKey !== null && loadedKey !== requestKey;
+
+  useEffect(() => {
+    if (!doctorId || !requestKey) return;
+    let cancelled = false;
+    fetch(`/api/appointments/doctor/${doctorId}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((data) => {
+        if (cancelled) return;
+        setAppointments(Array.isArray(data) ? data : []);
+        setError(false);
+        setLoadedKey(requestKey);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setError(true);
+        setAppointments([]);
+        setLoadedKey(requestKey);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [doctorId, requestKey]);
+
+  const active = appointments.filter(
+    (a) => a.status !== "CANCELLED" && a.status !== "NO_SHOW",
+  );
+  const sorted = active
+    .slice()
+    .sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
 
   const byDay = sorted.reduce<Record<string, AppointmentResponse[]>>((acc, a) => {
     const day = a.scheduledAt.slice(0, 10);
@@ -62,77 +124,95 @@ function DoctorSchedule() {
   const upcoming = Object.entries(byDay).filter(([d]) => d > todayKey);
 
   return (
-    <div>
-      <form onSubmit={handleSubmit} className="flex gap-2 mb-6">
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Doctor UUID"
-          className="flex-1 input"
+    <div className="space-y-6">
+      <div className="max-w-md">
+        <DoctorPicker
+          selectedId={doctorId}
+          onSelect={(doc) => {
+            setDoctorId(doc?.id ?? null);
+            setError(false);
+            if (!doc) setAppointments([]);
+          }}
         />
-        <button
-          type="submit"
-          className="bg-slate-800 text-white text-sm px-4 py-2 rounded-lg hover:bg-slate-700 transition-colors"
-        >
-          Load Schedule
-        </button>
-      </form>
-
-      {loading && <p className="text-slate-500 text-sm">Loading…</p>}
-      {!loading && searched && appointments.length === 0 && (
-        <p className="text-slate-500 text-sm">No appointments found.</p>
-      )}
-
-      {todayAppts.length > 0 && (
-        <div className="mb-8">
-          <h2 className="text-base font-semibold text-slate-700 mb-3">Today&apos;s Queue</h2>
-          <div className="space-y-2">
-            {todayAppts.map((a) => <AppointmentRow key={a.id} appt={a} />)}
-          </div>
-        </div>
-      )}
-
-      {upcoming.map(([day, appts]) => (
-        <div key={day} className="mb-6">
-          <h2 className="text-sm font-medium text-slate-500 mb-2">{dayLabel(day)}</h2>
-          <div className="space-y-2">
-            {appts.map((a) => <AppointmentRow key={a.id} appt={a} />)}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function AppointmentRow({ appt }: { appt: AppointmentResponse }) {
-  return (
-    <Link
-      href={`/doctor-dashboard/consultation/${appt.id}`}
-      className="flex items-center justify-between border border-slate-200 rounded-xl px-4 py-3 hover:border-slate-400 hover:shadow-sm transition-all bg-white"
-    >
-      <div className="text-sm">
-        <span className="font-medium text-slate-800">
-          {format(new Date(appt.scheduledAt), "h:mm a")}
-        </span>
-        <span className="text-slate-400 mx-2">·</span>
-        <span className="text-slate-600 capitalize">{appt.type.replace(/_/g, " ").toLowerCase()}</span>
-        {appt.reasonForVisit && (
-          <span className="text-slate-400 ml-2 text-xs">— {appt.reasonForVisit}</span>
-        )}
       </div>
-      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_STYLES[appt.status]}`}>
-        {appt.status.replace(/_/g, " ")}
-      </span>
-    </Link>
+
+      {error && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-danger/25 bg-danger-tint px-4 py-3"
+        >
+          <div className="flex items-center gap-2 text-sm text-danger">
+            <AlertTriangle className="size-4 shrink-0" aria-hidden />
+            Failed to load the schedule.
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              if (!doctorId) return;
+              setError(false);
+              setReloadKey((k) => k + 1);
+            }}
+          >
+            Retry
+          </Button>
+        </div>
+      )}
+
+      {loading && <ListSkeleton rows={4} />}
+
+      {!loading && !error && !doctorId && (
+        <EmptyState
+          icon={CalendarClock}
+          title="Select a doctor to view their schedule"
+          hint="Pick a doctor above to see today's queue and upcoming appointments."
+        />
+      )}
+
+      {!loading && !error && doctorId && sorted.length === 0 && (
+        <EmptyState
+          icon={CalendarClock}
+          title="No upcoming appointments"
+          hint="This doctor has no active appointments on the schedule."
+        />
+      )}
+
+      {!loading && !error && sorted.length > 0 && (
+        <>
+          <section>
+            <h2 className="font-display mb-3 text-sm font-semibold uppercase tracking-wide text-ink-muted">
+              Today&apos;s queue
+            </h2>
+            {todayAppts.length > 0 ? (
+              <Timeline appointments={todayAppts} />
+            ) : (
+              <p className="text-sm text-ink-faint">Nothing scheduled for today.</p>
+            )}
+          </section>
+
+          {upcoming.map(([day, appts]) => (
+            <section key={day}>
+              <h2 className="font-display mb-3 text-sm font-semibold uppercase tracking-wide text-ink-muted">
+                {dayLabel(day)}
+              </h2>
+              <Timeline appointments={appts} />
+            </section>
+          ))}
+        </>
+      )}
+    </div>
   );
 }
 
 export default function DoctorDashboardPage() {
   return (
     <div>
-      <h1 className="text-2xl font-bold text-slate-800 mb-2">Doctor Dashboard</h1>
-      <p className="text-slate-500 text-sm mb-6">Enter your Doctor UUID to view your schedule.</p>
-      <Suspense fallback={<p className="text-slate-500 text-sm">Loading…</p>}>
+      <PageHeader
+        eyebrow="Clinical"
+        title="Doctor dashboard"
+        description="Pick a doctor to see today's queue and the days ahead."
+      />
+      <Suspense fallback={<ListSkeleton rows={4} />}>
         <DoctorSchedule />
       </Suspense>
     </div>

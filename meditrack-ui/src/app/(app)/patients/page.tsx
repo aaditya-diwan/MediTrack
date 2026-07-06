@@ -2,63 +2,128 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { Plus, Search, UserSearch, Users } from "lucide-react";
 import PatientCard from "@/components/PatientCard";
 import { PatientResponse } from "@/lib/types";
+import { Button, EmptyState, ListSkeleton, PageHeader } from "@/components/ui";
+
+function NewPatientLink() {
+  return (
+    <Link
+      href="/patients/new"
+      className="inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-strong"
+    >
+      <Plus className="size-4" aria-hidden />
+      New patient
+    </Link>
+  );
+}
 
 export default function PatientsPage() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<PatientResponse[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [lastQuery, setLastQuery] = useState("");
 
-  async function handleSearch(e: React.FormEvent) {
-    e.preventDefault();
-    if (!query.trim()) return;
+  async function search(q: string) {
+    if (!q.trim()) return;
     setLoading(true);
     setSearched(true);
-    const res = await fetch(
-      `/api/patients/search?query=${encodeURIComponent(query)}`
-    );
-    setLoading(false);
-    if (res.ok) setResults(await res.json());
+    setError(null);
+    setLastQuery(q);
+    try {
+      const res = await fetch(
+        `/api/patients/search?query=${encodeURIComponent(q)}`,
+      );
+      if (!res.ok) throw new Error(`Search failed (${res.status})`);
+      const data = await res.json();
+      setResults(Array.isArray(data) ? data : []);
+    } catch {
+      setResults([]);
+      setError("Could not load patients. Check your connection and try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleSearch(e: React.FormEvent) {
+    e.preventDefault();
+    search(query);
   }
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-slate-800">Patients</h1>
-        <Link
-          href="/patients/new"
-          className="bg-slate-800 text-white text-sm px-4 py-2 rounded-lg hover:bg-slate-700 transition-colors"
-        >
-          + New Patient
-        </Link>
-      </div>
+      <PageHeader
+        eyebrow="Patients"
+        title="Patient directory"
+        description="Find a patient to open their chart, or register a new one."
+        actions={<NewPatientLink />}
+      />
 
-      <form onSubmit={handleSearch} className="flex gap-2 mb-6">
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search by name, MRN, email…"
-          className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
-        />
-        <button
-          type="submit"
-          className="bg-slate-700 text-white text-sm px-4 py-2 rounded-lg hover:bg-slate-600 transition-colors"
-        >
+      <form onSubmit={handleSearch} className="mb-6 flex gap-2" role="search">
+        <div className="relative flex-1">
+          <Search
+            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-faint"
+            aria-hidden
+          />
+          <label htmlFor="patient-search" className="sr-only">
+            Search patients
+          </label>
+          <input
+            id="patient-search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search by name, MRN, email…"
+            className="input pl-9"
+          />
+        </div>
+        <Button type="submit" variant="secondary">
           Search
-        </button>
+        </Button>
       </form>
 
-      {loading && <p className="text-slate-500 text-sm">Searching…</p>}
-      {!loading && searched && results.length === 0 && (
-        <p className="text-slate-500 text-sm">No patients found.</p>
+      {loading && <ListSkeleton rows={4} />}
+
+      {!loading && error && (
+        <div className="rounded-xl border border-danger/25 bg-danger-tint p-4">
+          <p className="text-sm font-medium text-danger">{error}</p>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="mt-3"
+            onClick={() => search(lastQuery)}
+          >
+            Retry
+          </Button>
+        </div>
       )}
-      <div className="space-y-3">
-        {results.map((p) => (
-          <PatientCard key={p.id} patient={p} />
-        ))}
-      </div>
+
+      {!loading && !error && !searched && (
+        <EmptyState
+          icon={UserSearch}
+          title="Search the patient directory"
+          hint="Look up patients by name, MRN, or email to open their chart."
+        />
+      )}
+
+      {!loading && !error && searched && results.length === 0 && (
+        <EmptyState
+          icon={Users}
+          title="No patients found"
+          hint={`Nothing matched “${lastQuery.trim()}”. Try a different spelling, or register the patient.`}
+          action={<NewPatientLink />}
+        />
+      )}
+
+      {!loading && !error && results.length > 0 && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {results.map((p) => (
+            <PatientCard key={p.id} patient={p} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -26,6 +26,8 @@ public class LabOrder {
     private List<DiagnosisCode> diagnosisCodes;
     private List<TestInfo> tests;
     private OrderStatus status;
+    /** Optional reference to the originating record in another service (e.g. prescriptionId). */
+    private String externalReference;
     private OffsetDateTime createdAt;
     private OffsetDateTime updatedAt;
 

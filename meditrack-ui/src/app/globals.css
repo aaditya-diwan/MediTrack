@@ -1,24 +1,155 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/*
+ * MediTrack design tokens.
+ *
+ * Semantic tokens only — pages never hardcode palette values. Light theme is
+ * warm chart-paper; dark theme is a green-black "monitor" surface. The theme
+ * is driven by [data-theme] on <html>, set before paint by the script in the
+ * root layout, so there is no unstyled flash and no media-query ambiguity.
+ */
+
+:root,
+[data-theme="light"] {
+  --page: #f6f5f1;
+  --card: #ffffff;
+  --card-2: #f1f0ea;
+  --line: #e4e2da;
+  --line-strong: #cfccc0;
+
+  --ink: #17211e;
+  --ink-muted: #626d68;
+  --ink-faint: #8b958f;
+
+  --brand: #0e6e62;
+  --brand-strong: #0a574d;
+  --brand-tint: #e3f0ed;
+  --brand-ink: #0a574d;
+
+  --ok: #15803d;
+  --ok-tint: #e8f4ec;
+  --warn: #a16207;
+  --warn-tint: #faf3e0;
+  --danger: #b91c1c;
+  --danger-tint: #fbebeb;
+  --info: #1d4ed8;
+  --info-tint: #e9effc;
 }
 
+[data-theme="dark"] {
+  --page: #0d1210;
+  --card: #141b18;
+  --card-2: #1a2320;
+  --line: #263029;
+  --line-strong: #35443c;
+
+  --ink: #e6ede9;
+  --ink-muted: #96a69f;
+  --ink-faint: #67776f;
+
+  --brand: #35b3a4;
+  --brand-strong: #5cc9bc;
+  --brand-tint: #11332e;
+  --brand-ink: #7dd3c8;
+
+  --ok: #4ade80;
+  --ok-tint: #12291a;
+  --warn: #fbbf24;
+  --warn-tint: #2e2410;
+  --danger: #f87171;
+  --danger-tint: #331515;
+  --info: #93b4f5;
+  --info-tint: #16233f;
+}
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-page: var(--page);
+  --color-card: var(--card);
+  --color-card-2: var(--card-2);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-faint: var(--ink-faint);
+
+  --color-brand: var(--brand);
+  --color-brand-strong: var(--brand-strong);
+  --color-brand-tint: var(--brand-tint);
+  --color-brand-ink: var(--brand-ink);
+
+  --color-ok: var(--ok);
+  --color-ok-tint: var(--ok-tint);
+  --color-warn: var(--warn);
+  --color-warn-tint: var(--warn-tint);
+  --color-danger: var(--danger);
+  --color-danger-tint: var(--danger-tint);
+  --color-info: var(--info);
+  --color-info-tint: var(--info-tint);
+
   --font-sans: var(--font-geist);
   --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-display);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--page);
+  color: var(--ink);
+}
+
+/* Visible keyboard focus everywhere; pages must not disable it. */
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--brand-tint);
+  color: var(--brand-ink);
+}
+
+/* Clinical data (MRNs, codes, lab values) aligns in columns. */
+.tabular {
+  font-family: var(--font-geist-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 @layer utilities {
+  /* Shared form control — kept for pages predating the component kit. */
   .input {
-    @apply w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400;
+    @apply w-full rounded-lg border border-line bg-card px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-brand/60 focus:border-brand;
+  }
+}
+
+/* ECG trace draw — the app's one moving accent (loading + brand mark). */
+@keyframes ecg-draw {
+  0% {
+    stroke-dashoffset: 240;
+  }
+  60% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: -240;
+  }
+}
+
+.ecg-animate {
+  stroke-dasharray: 240;
+  animation: ecg-draw 2.2s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ecg-animate {
+    animation: none;
+    stroke-dasharray: none;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
   }
 }
