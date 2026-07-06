@@ -57,6 +57,7 @@ spring:
       lab-events: lab-events
       patient-events: patient-events
       insurance-events: insurance-events
+      prescription-sent-to-lab: prescription.sent_to_lab.v1
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer

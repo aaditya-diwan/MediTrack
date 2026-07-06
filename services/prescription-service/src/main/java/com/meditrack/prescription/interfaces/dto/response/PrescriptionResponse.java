@@ -22,4 +22,5 @@ public class PrescriptionResponse {
     private LocalDateTime issuedAt;
     private LocalDate validUntil;
     private LocalDateTime createdAt;
+    private SafetyScreenResponse safety;
 }

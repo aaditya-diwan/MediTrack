@@ -3,13 +3,28 @@
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
+import { AlertTriangle, ArrowLeft, Check, Stethoscope } from "lucide-react";
 import {
   DoctorResponse,
+  PatientResponse,
   AvailabilitySlotResponse,
   AppointmentType,
   SPECIALIZATIONS,
   formatSpecialization,
 } from "@/lib/types";
+import {
+  Badge,
+  Button,
+  Card,
+  DetailLabel,
+  DetailValue,
+  EmptyState,
+  Field,
+  ListSkeleton,
+  PageHeader,
+  Skeleton,
+} from "@/components/ui";
+import { PatientPicker } from "@/components/PatientPicker";
 
 const DAY_ORDER = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"];
 
@@ -45,6 +60,77 @@ function minDate(): string {
   return d.toISOString().slice(0, 10);
 }
 
+const STEPS = ["Specialty", "Doctor", "Date & time", "Confirm"];
+
+/** Numbered stepper — the booking flow is a strict sequence. */
+function Stepper({ step }: { step: number }) {
+  return (
+    <ol className="mb-8 flex flex-wrap items-center gap-2" aria-label="Booking steps">
+      {STEPS.map((label, i) => {
+        const n = i + 1;
+        const state = step > n ? "done" : step === n ? "current" : "todo";
+        return (
+          <li key={label} className="flex items-center gap-2">
+            <span
+              aria-current={state === "current" ? "step" : undefined}
+              className={`flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
+                state === "done"
+                  ? "bg-brand-tint text-brand-ink"
+                  : state === "current"
+                    ? "bg-brand text-white shadow-sm"
+                    : "bg-card-2 text-ink-faint"
+              }`}
+            >
+              {state === "done" ? <Check className="size-4" aria-hidden /> : n}
+            </span>
+            <span
+              className={`text-xs font-medium ${
+                state === "current" ? "text-brand-ink" : "text-ink-faint"
+              }`}
+            >
+              {label}
+            </span>
+            {i < STEPS.length - 1 && <span className="h-px w-8 bg-line-strong" aria-hidden />}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function StepHeading({ title, onBack }: { title: string; onBack?: () => void }) {
+  return (
+    <div className="flex items-center justify-between">
+      <h2 className="font-display text-lg font-semibold text-ink">{title}</h2>
+      {onBack && (
+        <Button variant="ghost" size="sm" onClick={onBack}>
+          <ArrowLeft className="size-3.5" aria-hidden />
+          Back
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function InlineError({ message, onRetry }: { message: string; onRetry?: () => void }) {
+  return (
+    <div
+      role="alert"
+      className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-danger/25 bg-danger-tint px-4 py-3"
+    >
+      <div className="flex items-center gap-2 text-sm text-danger">
+        <AlertTriangle className="size-4 shrink-0" aria-hidden />
+        {message}
+      </div>
+      {onRetry && (
+        <Button variant="secondary" size="sm" onClick={onRetry}>
+          Retry
+        </Button>
+      )}
+    </div>
+  );
+}
+
 function BookForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -55,285 +141,404 @@ function BookForm() {
   const [specialization, setSpecialization] = useState("");
   const [doctors, setDoctors] = useState<DoctorResponse[]>([]);
   const [doctorsLoading, setDoctorsLoading] = useState(false);
+  const [doctorsError, setDoctorsError] = useState(false);
 
   const [selectedDoctor, setSelectedDoctor] = useState<DoctorResponse | null>(null);
   const [slots, setSlots] = useState<AvailabilitySlotResponse[]>([]);
+  const [preselectErrorId, setPreselectErrorId] = useState<string | null>(null);
+  const preselectError = !!preselectedDoctorId && preselectErrorId === preselectedDoctorId;
 
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedTime, setSelectedTime] = useState("");
-  const [patientId, setPatientId] = useState(preselectedPatientId);
+  const [patient, setPatient] = useState<PatientResponse | null>(null);
   const [visitType, setVisitType] = useState<AppointmentType>("FIRST_VISIT");
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [bookError, setBookError] = useState<string | null>(null);
 
+  // Deep link: /appointments/book?doctorId=… jumps straight to date & time.
   useEffect(() => {
     if (!preselectedDoctorId) return;
-    fetch(`/api/doctors/${preselectedDoctorId}`)
-      .then((r) => r.json())
-      .then((doc) => {
+    let cancelled = false;
+    Promise.all([
+      fetch(`/api/doctors/${preselectedDoctorId}`).then((r) =>
+        r.ok ? r.json() : Promise.reject(new Error(String(r.status))),
+      ),
+      fetch(`/api/doctors/${preselectedDoctorId}/slots`).then((r) =>
+        r.ok ? r.json() : Promise.reject(new Error(String(r.status))),
+      ),
+    ])
+      .then(([doc, sl]) => {
+        if (cancelled) return;
         setSelectedDoctor(doc);
-        return fetch(`/api/doctors/${preselectedDoctorId}/slots`);
+        setSlots(Array.isArray(sl) ? sl : []);
       })
-      .then((r) => r.json())
-      .then((sl) => setSlots(Array.isArray(sl) ? sl : []));
+      .catch(() => {
+        if (!cancelled) setPreselectErrorId(preselectedDoctorId);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [preselectedDoctorId]);
 
-  async function searchDoctors() {
+  // Deep link: keep supporting ?patientId=… by hydrating the picker.
+  useEffect(() => {
+    if (!preselectedPatientId) return;
+    let cancelled = false;
+    fetch(`/api/patients/${preselectedPatientId}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((p: PatientResponse) => {
+        if (!cancelled) setPatient(p);
+      })
+      .catch(() => {
+        // Fall back to manual patient search in the confirm step.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [preselectedPatientId]);
+
+  async function searchDoctors(spec: string) {
     setDoctorsLoading(true);
-    const url = specialization ? `/api/doctors?specialization=${specialization}` : `/api/doctors`;
-    const res = await fetch(url);
-    setDoctorsLoading(false);
-    if (res.ok) setDoctors(await res.json());
+    setDoctorsError(false);
+    try {
+      const url = spec ? `/api/doctors?specialization=${spec}` : `/api/doctors`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(String(res.status));
+      const data = await res.json();
+      setDoctors(Array.isArray(data) ? data : []);
+    } catch {
+      setDoctorsError(true);
+      setDoctors([]);
+    } finally {
+      setDoctorsLoading(false);
+    }
+  }
+
+  function chooseSpecialty(spec: string) {
+    setSpecialization(spec);
+    setStep(2);
+    searchDoctors(spec);
   }
 
   async function selectDoctor(doctor: DoctorResponse) {
     setSelectedDoctor(doctor);
-    const res = await fetch(`/api/doctors/${doctor.id}/slots`);
-    const sl = await res.json();
-    setSlots(Array.isArray(sl) ? sl : []);
+    setSelectedDate("");
+    setSelectedTime("");
     setStep(3);
+    try {
+      const res = await fetch(`/api/doctors/${doctor.id}/slots`);
+      if (!res.ok) throw new Error(String(res.status));
+      const sl = await res.json();
+      setSlots(Array.isArray(sl) ? sl : []);
+    } catch {
+      setSlots([]);
+      toast.error("Could not load this doctor's availability.");
+    }
   }
 
   const availableDays = slots.filter((s) => s.available).map((s) => s.dayOfWeek);
   const slotForDate = slots.find(
-    (s) => selectedDate && s.dayOfWeek === getDayOfWeek(selectedDate) && s.available
+    (s) => selectedDate && s.dayOfWeek === getDayOfWeek(selectedDate) && s.available,
   );
   const timeSlots = slotForDate
     ? generateTimeSlots(slotForDate.startTime, slotForDate.endTime, slotForDate.slotDurationMinutes)
     : [];
 
   async function submit() {
-    if (!selectedDoctor || !selectedDate || !selectedTime || !patientId) {
+    if (!selectedDoctor || !selectedDate || !selectedTime || !patient) {
       toast.error("Please fill all required fields.");
       return;
     }
     setSubmitting(true);
-    const res = await fetch("/api/appointments", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        patientId,
-        doctorId: selectedDoctor.id,
-        type: visitType,
-        reasonForVisit: reason || undefined,
-        scheduledAt: `${selectedDate}T${selectedTime}:00`,
-      }),
-    });
-    setSubmitting(false);
-    if (!res.ok) {
-      const body = await res.text();
-      toast.error(body || "Failed to book appointment.");
-      return;
+    setBookError(null);
+    try {
+      const res = await fetch("/api/appointments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          patientId: patient.id,
+          doctorId: selectedDoctor.id,
+          type: visitType,
+          reasonForVisit: reason || undefined,
+          scheduledAt: `${selectedDate}T${selectedTime}:00`,
+        }),
+      });
+      if (!res.ok) {
+        // 422 (doctor not found / inactive) and 409 (outside availability /
+        // double booking) return {"error": "…"} — surface it verbatim.
+        let message = "Failed to book appointment. Please try again.";
+        try {
+          const body = await res.json();
+          if (body && typeof body.error === "string" && body.error.trim()) {
+            message = body.error;
+          }
+        } catch {
+          // Non-JSON body — keep the generic message.
+        }
+        setBookError(message);
+        return;
+      }
+      const appt = await res.json();
+      toast.success("Appointment booked!");
+      router.push(`/appointments/${appt.id}`);
+    } catch {
+      setBookError("Network error — the appointment was not booked. Please try again.");
+    } finally {
+      setSubmitting(false);
     }
-    const appt = await res.json();
-    toast.success("Appointment booked!");
-    router.push(`/appointments/${appt.id}`);
   }
 
-  const STEPS = ["Choose Specialty", "Choose Doctor", "Pick Date & Time", "Confirm"];
-
   return (
-    <div className="max-w-xl">
-      {/* Step indicator */}
-      <div className="flex items-center gap-1 mb-8">
-        {STEPS.map((label, i) => (
-          <div key={i} className="flex items-center gap-1">
-            <div
-              className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${
-                step >= i + 1 ? "bg-slate-800 text-white" : "bg-slate-200 text-slate-500"
-              }`}
-            >
-              {i + 1}
-            </div>
-            {i < STEPS.length - 1 && (
-              <div className={`h-0.5 w-10 ${step > i + 1 ? "bg-slate-800" : "bg-slate-200"}`} />
-            )}
-          </div>
-        ))}
-        <span className="ml-3 text-xs text-slate-500">{STEPS[step - 1]}</span>
-      </div>
+    <div className="max-w-2xl">
+      <Stepper step={step} />
 
-      {/* Step 1 — Specialty */}
+      {/* Step 1 — Specialty grid */}
       {step === 1 && (
         <div className="space-y-4">
-          <h2 className="text-lg font-semibold text-slate-800">Choose a Specialty</h2>
-          <select
-            value={specialization}
-            onChange={(e) => setSpecialization(e.target.value)}
-            className="input"
-          >
-            <option value="">All Specializations</option>
+          <StepHeading title="Choose a specialty" />
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <button
+              type="button"
+              onClick={() => chooseSpecialty("")}
+              className="rounded-xl border border-line bg-card px-3 py-3 text-left text-sm font-medium text-ink transition-colors hover:border-brand hover:bg-brand-tint"
+            >
+              All specialties
+            </button>
             {SPECIALIZATIONS.map((s) => (
-              <option key={s} value={s}>{formatSpecialization(s)}</option>
-            ))}
-          </select>
-          <button
-            onClick={() => { searchDoctors(); setStep(2); }}
-            className="bg-slate-800 text-white text-sm px-6 py-2 rounded-lg hover:bg-slate-700 transition-colors"
-          >
-            Find Doctors →
-          </button>
-        </div>
-      )}
-
-      {/* Step 2 — Doctor */}
-      {step === 2 && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-slate-800">Choose a Doctor</h2>
-            <button onClick={() => setStep(1)} className="text-sm text-slate-500 hover:text-slate-700">← Back</button>
-          </div>
-          {doctorsLoading && <p className="text-slate-500 text-sm">Loading…</p>}
-          {!doctorsLoading && doctors.length === 0 && (
-            <p className="text-slate-500 text-sm">No doctors found.</p>
-          )}
-          <div className="space-y-2">
-            {doctors.map((d) => (
               <button
-                key={d.id}
-                onClick={() => selectDoctor(d)}
-                className="w-full text-left border border-slate-200 rounded-xl p-4 hover:border-slate-800 transition-all bg-white"
+                key={s}
+                type="button"
+                onClick={() => chooseSpecialty(s)}
+                className="rounded-xl border border-line bg-card px-3 py-3 text-left text-sm font-medium text-ink transition-colors hover:border-brand hover:bg-brand-tint"
               >
-                <p className="font-semibold text-slate-800">{d.fullName}</p>
-                <p className="text-sm text-slate-500">
-                  {formatSpecialization(d.specialization)} · {d.yearsOfExperience}y exp
-                </p>
+                {formatSpecialization(s)}
               </button>
             ))}
           </div>
         </div>
       )}
 
-      {/* Step 3 — Date & Time */}
-      {step === 3 && selectedDoctor && (
+      {/* Step 2 — Doctor cards */}
+      {step === 2 && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-slate-800">Pick Date & Time</h2>
-            {!preselectedDoctorId && (
-              <button onClick={() => setStep(2)} className="text-sm text-slate-500 hover:text-slate-700">← Back</button>
-            )}
-          </div>
-
-          <div className="border border-slate-200 rounded-lg px-4 py-3 bg-slate-50 text-sm">
-            <span className="font-medium">{selectedDoctor.fullName}</span>
-            {availableDays.length > 0 && (
-              <span className="text-slate-500 ml-2">
-                Available:{" "}
-                {availableDays.map((d) => d.charAt(0) + d.slice(1).toLowerCase()).join(", ")}
-              </span>
-            )}
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Date</label>
-            <input
-              type="date"
-              min={minDate()}
-              value={selectedDate}
-              onChange={(e) => { setSelectedDate(e.target.value); setSelectedTime(""); }}
-              className="input"
+          <StepHeading title="Choose a doctor" onBack={() => setStep(1)} />
+          {doctorsLoading && <ListSkeleton rows={3} />}
+          {doctorsError && (
+            <InlineError
+              message="Failed to load doctors."
+              onRetry={() => searchDoctors(specialization)}
             />
-            {selectedDate && !slotForDate && (
-              <p className="text-amber-600 text-xs mt-1">
-                Not available on {getDayOfWeek(selectedDate).charAt(0) + getDayOfWeek(selectedDate).slice(1).toLowerCase()}s.
-              </p>
-            )}
+          )}
+          {!doctorsLoading && !doctorsError && doctors.length === 0 && (
+            <EmptyState
+              icon={Stethoscope}
+              title="No doctors found"
+              hint="Try a different specialty."
+              action={
+                <Button variant="secondary" size="sm" onClick={() => setStep(1)}>
+                  Change specialty
+                </Button>
+              }
+            />
+          )}
+          <div className="space-y-2">
+            {doctors.map((d) => (
+              <button
+                key={d.id}
+                type="button"
+                onClick={() => selectDoctor(d)}
+                className="flex w-full items-center gap-4 rounded-xl border border-line bg-card p-4 text-left transition-all hover:border-brand hover:shadow-sm"
+              >
+                <span
+                  aria-hidden
+                  className="flex size-10 shrink-0 items-center justify-center rounded-full bg-brand-tint text-sm font-semibold text-brand-ink"
+                >
+                  {d.firstName?.[0]}
+                  {d.lastName?.[0]}
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-semibold text-ink">
+                    {d.fullName}
+                  </span>
+                  <span className="mt-0.5 flex flex-wrap items-center gap-2">
+                    <Badge tone="brand">{formatSpecialization(d.specialization)}</Badge>
+                    <span className="text-xs text-ink-muted">
+                      {d.yearsOfExperience} yrs experience
+                    </span>
+                  </span>
+                </span>
+              </button>
+            ))}
           </div>
+        </div>
+      )}
 
-          {timeSlots.length > 0 && (
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">Time Slot</label>
-              <div className="grid grid-cols-4 gap-2">
-                {timeSlots.map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => setSelectedTime(t)}
-                    className={`text-sm py-2 rounded-lg border transition-colors ${
-                      selectedTime === t
-                        ? "bg-slate-800 text-white border-slate-800"
-                        : "border-slate-300 text-slate-700 hover:border-slate-600"
-                    }`}
-                  >
-                    {fmtTime(t)}
-                  </button>
-                ))}
-              </div>
+      {/* Step 3 — Date & time */}
+      {step === 3 && (
+        <div className="space-y-4">
+          <StepHeading
+            title="Pick date & time"
+            onBack={!preselectedDoctorId ? () => setStep(2) : undefined}
+          />
+
+          {preselectError && (
+            <InlineError message="Could not load the selected doctor. Try again from the doctors directory." />
+          )}
+
+          {!selectedDoctor && !preselectError && (
+            <div className="space-y-3" role="status" aria-label="Loading doctor">
+              <Skeleton className="h-16 w-full" />
+              <Skeleton className="h-10 w-64" />
             </div>
           )}
 
-          <button
-            onClick={() => setStep(4)}
-            disabled={!selectedDate || !selectedTime}
-            className="bg-slate-800 text-white text-sm px-6 py-2 rounded-lg hover:bg-slate-700 disabled:opacity-40 transition-colors"
-          >
-            Continue →
-          </button>
+          {selectedDoctor && (
+            <>
+              <div className="rounded-xl border border-line bg-card-2 px-4 py-3 text-sm">
+                <span className="font-medium text-ink">{selectedDoctor.fullName}</span>
+                {availableDays.length > 0 && (
+                  <span className="ml-2 text-ink-muted">
+                    Available:{" "}
+                    {availableDays
+                      .map((d) => d.charAt(0) + d.slice(1).toLowerCase())
+                      .join(", ")}
+                  </span>
+                )}
+              </div>
+
+              <Field label="Date" required className="max-w-xs">
+                {(ids) => (
+                  <input
+                    {...ids}
+                    type="date"
+                    min={minDate()}
+                    value={selectedDate}
+                    onChange={(e) => {
+                      setSelectedDate(e.target.value);
+                      setSelectedTime("");
+                    }}
+                    className="input"
+                  />
+                )}
+              </Field>
+              {selectedDate && !slotForDate && (
+                <p className="text-xs text-warn">
+                  Dr. {selectedDoctor.lastName} is not available on{" "}
+                  {getDayOfWeek(selectedDate).charAt(0) +
+                    getDayOfWeek(selectedDate).slice(1).toLowerCase()}
+                  s.
+                </p>
+              )}
+
+              {timeSlots.length > 0 && (
+                <fieldset>
+                  <legend className="mb-2 block text-xs font-medium text-ink-muted">
+                    Time slot <span className="text-danger">*</span>
+                  </legend>
+                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                    {timeSlots.map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setSelectedTime(t)}
+                        aria-pressed={selectedTime === t}
+                        className={`tabular rounded-lg border py-2 text-sm transition-colors ${
+                          selectedTime === t
+                            ? "border-brand bg-brand text-white"
+                            : "border-line-strong bg-card text-ink hover:border-brand hover:text-brand-ink"
+                        }`}
+                      >
+                        {fmtTime(t)}
+                      </button>
+                    ))}
+                  </div>
+                </fieldset>
+              )}
+
+              <Button onClick={() => setStep(4)} disabled={!selectedDate || !selectedTime}>
+                Continue
+              </Button>
+            </>
+          )}
         </div>
       )}
 
       {/* Step 4 — Confirm */}
       {step === 4 && selectedDoctor && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-slate-800">Confirm Appointment</h2>
-            <button onClick={() => setStep(3)} className="text-sm text-slate-500 hover:text-slate-700">← Back</button>
-          </div>
+          <StepHeading title="Confirm appointment" onBack={() => setStep(3)} />
 
-          <div className="border border-slate-200 rounded-xl p-4 bg-white space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-slate-500">Doctor</span>
-              <span className="font-medium">{selectedDoctor.fullName}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500">Date & Time</span>
-              <span className="font-medium">{selectedDate} at {fmtTime(selectedTime)}</span>
-            </div>
-          </div>
+          <Card>
+            <dl className="grid grid-cols-2 gap-x-8 gap-y-3">
+              <div>
+                <DetailLabel>Doctor</DetailLabel>
+                <DetailValue>{selectedDoctor.fullName}</DetailValue>
+              </div>
+              <div>
+                <DetailLabel>Specialty</DetailLabel>
+                <DetailValue>{formatSpecialization(selectedDoctor.specialization)}</DetailValue>
+              </div>
+              <div>
+                <DetailLabel>Date</DetailLabel>
+                <DetailValue>{selectedDate}</DetailValue>
+              </div>
+              <div>
+                <DetailLabel>Time</DetailLabel>
+                <DetailValue mono>{fmtTime(selectedTime)}</DetailValue>
+              </div>
+            </dl>
+          </Card>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Patient ID <span className="text-red-500">*</span>
-            </label>
-            <input
-              value={patientId}
-              onChange={(e) => setPatientId(e.target.value)}
-              placeholder="Patient UUID"
-              className="input"
-            />
-          </div>
+          <PatientPicker selected={patient} onSelect={setPatient} />
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Visit Type</label>
-            <select
-              value={visitType}
-              onChange={(e) => setVisitType(e.target.value as AppointmentType)}
-              className="input"
+          <Field label="Visit type">
+            {(ids) => (
+              <select
+                {...ids}
+                value={visitType}
+                onChange={(e) => setVisitType(e.target.value as AppointmentType)}
+                className="input"
+              >
+                <option value="FIRST_VISIT">First visit</option>
+                <option value="FOLLOW_UP">Follow-up</option>
+                <option value="EMERGENCY">Emergency</option>
+                <option value="TELECONSULTATION">Teleconsultation</option>
+              </select>
+            )}
+          </Field>
+
+          <Field label="Reason for visit" hint="Optional — briefly describe symptoms.">
+            {(ids) => (
+              <textarea
+                {...ids}
+                rows={3}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="Briefly describe your symptoms…"
+                className="input"
+              />
+            )}
+          </Field>
+
+          {bookError && (
+            <div
+              role="alert"
+              className="flex items-start gap-2 rounded-xl border border-danger/25 bg-danger-tint px-4 py-3 text-sm text-danger"
             >
-              <option value="FIRST_VISIT">First Visit</option>
-              <option value="FOLLOW_UP">Follow-up</option>
-              <option value="EMERGENCY">Emergency</option>
-              <option value="TELECONSULTATION">Teleconsultation</option>
-            </select>
-          </div>
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+              <p>{bookError}</p>
+            </div>
+          )}
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Reason for Visit</label>
-            <textarea
-              rows={3}
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder="Briefly describe your symptoms…"
-              className="input"
-            />
-          </div>
-
-          <button
+          <Button
             onClick={submit}
-            disabled={submitting || !patientId}
-            className="w-full bg-slate-800 text-white text-sm py-2.5 rounded-lg hover:bg-slate-700 disabled:opacity-40 transition-colors font-medium"
+            loading={submitting}
+            disabled={!patient}
+            className="w-full"
           >
-            {submitting ? "Booking…" : "Confirm Appointment"}
-          </button>
+            Confirm appointment
+          </Button>
         </div>
       )}
     </div>
@@ -343,8 +548,12 @@ function BookForm() {
 export default function BookAppointmentPage() {
   return (
     <div>
-      <h1 className="text-2xl font-bold text-slate-800 mb-6">Book Appointment</h1>
-      <Suspense fallback={<p className="text-slate-500 text-sm">Loading…</p>}>
+      <PageHeader
+        eyebrow="Scheduling"
+        title="Book appointment"
+        description="Pick a specialty, choose a doctor, and lock in a time slot."
+      />
+      <Suspense fallback={<ListSkeleton rows={3} />}>
         <BookForm />
       </Suspense>
     </div>

@@ -2,8 +2,12 @@ package com.meditrack.prescription.application.service;
 
 import com.meditrack.prescription.application.exception.PrescriptionNotFoundException;
 import com.meditrack.prescription.application.exception.PrescriptionNotIssuedException;
+import com.meditrack.prescription.application.exception.PrescriptionSafetyRejectedException;
 import com.meditrack.prescription.application.usecase.*;
 import com.meditrack.prescription.domain.model.*;
+import com.meditrack.prescription.domain.port.PatientSafetyContext;
+import com.meditrack.prescription.domain.port.PrescriptionSafetyPort;
+import com.meditrack.prescription.domain.port.SafetyScreenResult;
 import com.meditrack.prescription.domain.repository.PrescriptionRepository;
 import com.meditrack.prescription.infrastructure.messaging.event.*;
 import com.meditrack.prescription.interfaces.dto.request.CreatePrescriptionRequest;
@@ -28,6 +32,7 @@ public class PrescriptionApplicationService implements CreatePrescriptionUseCase
 
     private final PrescriptionRepository prescriptionRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final PrescriptionSafetyPort prescriptionSafetyPort;
 
     @Override
     @Transactional
@@ -68,9 +73,37 @@ public class PrescriptionApplicationService implements CreatePrescriptionUseCase
 
     @Override
     @Transactional
-    public PrescriptionResponse issuePrescription(UUID id) {
+    public PrescriptionResponse issuePrescription(UUID id, boolean override, String overrideReason) {
         Prescription p = prescriptionRepository.findById(id)
                 .orElseThrow(() -> new PrescriptionNotFoundException(id));
+
+        // Screen through ai-service BEFORE transitioning to ISSUED. Fail-open:
+        // the port returns checked=false instead of throwing on infra failures.
+        // TODO: enrich PatientSafetyContext (current medications, allergies)
+        //  from patient-service instead of passing an empty context.
+        SafetyScreenResult screen = prescriptionSafetyPort.screen(p, PatientSafetyContext.empty());
+        if (!screen.checked()) {
+            log.warn("AI safety screen unavailable for prescription {} — issuing without safety check", id);
+        }
+
+        boolean blocking = screen.isBlocking();
+        if (blocking && !override) {
+            log.warn("Blocking safety finding ({}) for prescription {} — rejecting issue",
+                    screen.highestSeverity(), id);
+            throw new PrescriptionSafetyRejectedException(screen);
+        }
+        boolean overridden = blocking && override;
+        if (overridden) {
+            log.warn("Doctor override of {} safety finding for prescription {} — reason: {}",
+                    screen.highestSeverity(), id, overrideReason);
+        }
+
+        p.setSafetyCheckPerformed(screen.checked());
+        p.setSafetySeverity(screen.highestSeverity());
+        p.setSafetySummary(screen.summary());
+        p.setSafetyOverridden(overridden);
+        p.setSafetyOverrideReason(overridden ? overrideReason : null);
+
         p.setStatus(PrescriptionStatus.ISSUED);
         p.setIssuedAt(LocalDateTime.now());
         p.setValidUntil(LocalDate.now().plusDays(30));
@@ -79,7 +112,19 @@ public class PrescriptionApplicationService implements CreatePrescriptionUseCase
                 .prescriptionId(saved.getId()).patientId(saved.getPatientId())
                 .doctorId(saved.getDoctorId()).appointmentId(saved.getAppointmentId())
                 .occurredAt(Instant.now()).build());
-        return toResponse(saved);
+
+        PrescriptionResponse response = toResponse(saved);
+        // Enrich with issue-time-only screen details (not persisted).
+        response.getSafety().setRequiresPharmacistReview(screen.requiresPharmacistReview());
+        response.getSafety().setFindings(toFindingResponses(screen));
+        return response;
+    }
+
+    private static List<SafetyScreenResponse.SafetyFindingResponse> toFindingResponses(SafetyScreenResult screen) {
+        return screen.findings().stream()
+                .map(f -> SafetyScreenResponse.SafetyFindingResponse.builder()
+                        .type(f.type()).severity(f.severity()).description(f.description()).build())
+                .collect(Collectors.toList());
     }
 
     @Override
@@ -144,6 +189,14 @@ public class PrescriptionApplicationService implements CreatePrescriptionUseCase
                 .doctorId(p.getDoctorId()).appointmentId(p.getAppointmentId())
                 .status(p.getStatus().name()).consultationNotes(p.getConsultationNotes())
                 .diagnosisCodes(p.getDiagnosisCodes()).medications(meds).labOrders(labs)
-                .issuedAt(p.getIssuedAt()).validUntil(p.getValidUntil()).createdAt(p.getCreatedAt()).build();
+                .issuedAt(p.getIssuedAt()).validUntil(p.getValidUntil()).createdAt(p.getCreatedAt())
+                .safety(SafetyScreenResponse.builder()
+                        .checked(p.isSafetyCheckPerformed())
+                        .severity(p.getSafetySeverity())
+                        .summary(p.getSafetySummary())
+                        .overridden(p.isSafetyOverridden())
+                        .overrideReason(p.getSafetyOverrideReason())
+                        .build())
+                .build();
     }
 }

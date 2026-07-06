@@ -8,8 +8,10 @@
 
 MediTrack is an event-driven hospital management platform. Seven Spring Boot microservices —
 **patients, doctors, appointments, prescriptions, lab, insurance**, and an **AI clinical-decision-support**
-service — each own their data and coordinate through versioned Kafka domain events rather than direct
-calls. A **Next.js backend-for-frontend (BFF)** is the single edge the browser talks to, and the whole
+service — each own their data and coordinate through versioned Kafka domain events, with two deliberate
+synchronous edges where clinical safety demands an immediate answer: prescriptions are screened by the
+AI service before issuance, and bookings are validated against the doctor's published availability.
+A **Next.js backend-for-frontend (BFF)** is the single edge the browser talks to, and the whole
 platform is wrapped in a metrics/traces/logs observability stack.
 
 ## 🎥 Demo
@@ -55,7 +57,9 @@ MediTrack connects the clinical domains of a hospital in real-time using:
 - **Hexagonal Architecture**: clean separation of business logic (domain) from framework/IO concerns (adapters)
 - **Backend-for-Frontend (BFF)**: a Next.js edge holds the session as an httpOnly-cookie JWT and reverse-proxies each request
 - **Transactional Outbox**: reliable, no-dual-write event publishing (lab-service)
-- **AI Clinical Decision Support**: drug-interaction / allergy screening and lab-result explanation via open-weight LLM inference
+- **AI Clinical Decision Support**: six clinical AI endpoints — prescription safety screening, lab-result explanation, symptom triage, SOAP-note generation, ICD-10 coding, and patient-history summarization — via open-weight LLM inference
+- **AI Safety Gate**: issuing a prescription automatically runs the drug-interaction/allergy screen; blocking findings require a documented doctor override
+- **Cross-service validation**: appointment booking verifies the doctor's existence and published availability against doctor-service
 - **CQRS** (patient-service): separate command/query services for reads and writes
 
 ## 🏗️ Architecture
@@ -114,6 +118,8 @@ flowchart TB
     SVC -->|JDBC| PG
     SVC -->|cache| REDIS
     SVC <-->|"produce / consume"| KAFKA
+    RX -->|"drug-safety screen<br/>(sync, fail-open)"| AI
+    APP -->|"doctor + availability<br/>validation (sync)"| DOC
     AI -->|"OpenAI-compatible API"| TX
     SVC -. "metrics · traces · logs" .-> OBS
 
@@ -214,6 +220,18 @@ cd meditrack-ui
 npm install
 npm run dev          # http://localhost:3001  (log in as admin / admin123)
 ```
+
+The web app is a role-aware clinical workspace (Admin, Doctor, Nurse, Lab tech) with:
+
+- a **hospital overview dashboard** — patient quick-find, staff/critical-result stats, quick actions
+- **patient charts**, appointment booking wizard (specialty → doctor → slot), doctor directory with
+  weekly availability, prescription writer, and lab workflows — with search-based patient/doctor
+  pickers throughout (no IDs to paste anywhere)
+- an **AI clinical console** (prescription safety, lab explainer, symptom triage, SOAP notes,
+  ICD-10 coding, history summary) plus the same AI tools embedded contextually in the consultation
+  and lab screens; blocking safety findings surface an override-with-justification flow
+- a design system with light/dark themes, centralized clinical status semantics, skeleton loading,
+  and accessible forms
 
 ## 💻 Local Development
 
@@ -434,6 +452,36 @@ Content-Type: application/json
 
 # → 200: { urgency (ROUTINE..CRITICAL), overallSummary, patientFriendlySummary, results[], suggestedFollowUp, disclaimer }
 ```
+
+```bash
+# Triage symptoms before booking — urgency + specialty recommendation
+POST http://localhost:8089/api/v1/ai/symptom-triage
+{ "symptoms": "crushing chest pain radiating to left arm", "duration": "30 minutes", "patientAgeYears": 58 }
+# → 200: { urgency: ROUTINE|SOON|URGENT|EMERGENCY, emergency, recommendedSpecialty, redFlags[], rationale, selfCareAdvice, disclaimer }
+
+# Convert free-text consultation notes into a structured SOAP note
+POST http://localhost:8089/api/v1/ai/soap-note
+{ "consultationNotes": "pt c/o fever 3 days, throat pain, no cough. exam: exudative tonsils...", "vitals": {"temp": "38.9C"} }
+# → 200: { subjective, objective, assessment, plan, assessmentProblems[], followUp, disclaimer }
+# Sections absent from the input come back as "Not documented." — the model may not invent findings.
+
+# Suggest ICD-10 codes from clinical notes (≤8, ranked by confidence)
+POST http://localhost:8089/api/v1/ai/icd-codes
+{ "clinicalNotes": "acute exudative tonsillitis with fever, rapid strep positive" }
+# → 200: { suggestions: [{code, description, confidence: HIGH|MODERATE|LOW, rationale}], caveat }
+
+# Summarize a patient's history into a pre-consultation brief
+POST http://localhost:8089/api/v1/ai/history-summary
+{ "conditions": ["T2DM", "hypertension"], "medications": ["Metformin 500mg"], "allergies": ["penicillin"],
+  "recentLabResults": [{"name": "HbA1c", "value": "8.2%", "flag": "HIGH"}], "pastVisits": [] }
+# → 200: { keyConditions[], activeMedications[], criticalAllergies[], recentAbnormalFindings[], redFlags[], narrativeSummary, suggestedFollowUps[] }
+```
+
+**Safety gate:** `prescription-service` calls `POST /api/v1/ai/prescription-safety` automatically when a
+prescription is issued. MAJOR or CONTRAINDICATED findings block issuance (HTTP 409 with the findings)
+unless the doctor re-issues with `{"override": true, "overrideReason": "..."}` — the override and the
+screen outcome are persisted on the prescription. If ai-service is unreachable the issue proceeds
+(fail-open) and is marked `safetyCheckPerformed: false`.
 
 ### Actuator Endpoints
 

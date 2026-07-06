@@ -1,4 +1,6 @@
+import { FileText } from "lucide-react";
 import { MedicalRecordResponse } from "@/lib/types";
+import { Card, EmptyState } from "@/components/ui";
 import { format } from "date-fns";
 
 export default function MedicalRecordList({
@@ -7,23 +9,26 @@ export default function MedicalRecordList({
   records: MedicalRecordResponse[];
 }) {
   if (!records.length) {
-    return <p className="text-slate-500 text-sm">No medical records found.</p>;
+    return (
+      <EmptyState
+        icon={FileText}
+        title="No medical records"
+        hint="Records added for this patient will appear here in chronological order."
+      />
+    );
   }
   return (
     <ul className="space-y-3">
       {records.map((r) => (
-        <li
-          key={r.recordId}
-          className="border border-slate-200 rounded-lg p-4 text-sm"
-        >
-          <div className="flex justify-between items-center mb-1">
-            <span className="font-medium text-slate-800">{r.diagnosis}</span>
-            <span className="text-xs text-slate-400">
+        <Card as="li" key={r.recordId} className="p-4">
+          <div className="mb-1 flex items-baseline justify-between gap-3">
+            <span className="font-medium text-ink">{r.diagnosis}</span>
+            <span className="tabular shrink-0 text-xs text-ink-faint">
               {format(new Date(r.date), "MMM d, yyyy")}
             </span>
           </div>
-          <p className="text-slate-600">{r.treatment}</p>
-        </li>
+          <p className="text-sm text-ink-muted">{r.treatment}</p>
+        </Card>
       ))}
     </ul>
   );

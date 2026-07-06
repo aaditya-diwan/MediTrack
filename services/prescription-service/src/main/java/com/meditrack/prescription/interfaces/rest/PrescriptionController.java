@@ -3,6 +3,7 @@ package com.meditrack.prescription.interfaces.rest;
 import com.meditrack.prescription.application.usecase.*;
 import com.meditrack.prescription.infrastructure.pdf.PrescriptionPdfGenerator;
 import com.meditrack.prescription.interfaces.dto.request.CreatePrescriptionRequest;
+import com.meditrack.prescription.interfaces.dto.request.IssuePrescriptionRequest;
 import com.meditrack.prescription.interfaces.dto.response.PrescriptionResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -43,8 +44,11 @@ public class PrescriptionController {
     }
 
     @PostMapping("/{id}/issue")
-    public ResponseEntity<PrescriptionResponse> issue(@PathVariable UUID id) {
-        return ResponseEntity.ok(issuePrescriptionUseCase.issuePrescription(id));
+    public ResponseEntity<PrescriptionResponse> issue(@PathVariable UUID id,
+                                                      @RequestBody(required = false) IssuePrescriptionRequest request) {
+        boolean override = request != null && Boolean.TRUE.equals(request.getOverride());
+        String overrideReason = request != null ? request.getOverrideReason() : null;
+        return ResponseEntity.ok(issuePrescriptionUseCase.issuePrescription(id, override, overrideReason));
     }
 
     @PostMapping("/{id}/send-pharmacy")

@@ -1,56 +1,146 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { use } from "react";
+import { use, useEffect, useState } from "react";
 import { format } from "date-fns";
 import { toast } from "sonner";
-import { PrescriptionResponse } from "@/lib/types";
+import {
+  AlertTriangle,
+  Download,
+  FlaskConical,
+  Pill,
+  RefreshCw,
+  Send,
+  ShieldAlert,
+  ShieldCheck,
+} from "lucide-react";
+import {
+  Badge,
+  Button,
+  Card,
+  CardTitle,
+  DetailLabel,
+  EcgLoading,
+  EmptyState,
+  Field,
+  LAB_PRIORITY,
+  PageHeader,
+  PRESCRIPTION_STATUS,
+  SEVERITY,
+  StatusBadge,
+  statusOf,
+} from "@/components/ui";
+import type {
+  PrescriptionResponse,
+  PrescriptionSafetyInfo,
+  SafetyBlockResponse,
+} from "@/lib/types";
 
-const STATUS_STYLES: Record<string, string> = {
-  DRAFT: "bg-yellow-100 text-yellow-700",
-  ISSUED: "bg-green-100 text-green-700",
-  SENT_TO_PHARMACY: "bg-blue-100 text-blue-700",
-  SENT_TO_LAB: "bg-purple-100 text-purple-700",
-  FULFILLED: "bg-slate-100 text-slate-600",
-};
+type IssueResponse = PrescriptionResponse & { safety?: PrescriptionSafetyInfo };
 
-export default function PrescriptionDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default function PrescriptionDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const { id } = use(params);
   const [rx, setRx] = useState<PrescriptionResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [acting, setActing] = useState(false);
 
+  // Safety-block override flow
+  const [safetyBlock, setSafetyBlock] = useState<SafetyBlockResponse | null>(null);
+  const [overrideReason, setOverrideReason] = useState("");
+  const [safetyInfo, setSafetyInfo] = useState<PrescriptionSafetyInfo | null>(null);
+
+  const [reloadKey, setReloadKey] = useState(0);
+
   useEffect(() => {
+    let cancelled = false;
     fetch(`/api/prescriptions/${id}`)
-      .then((r) => r.json())
-      .then((data) => { setRx(data); setLoading(false); });
-  }, [id]);
+      .then((r) => {
+        if (!r.ok) throw new Error(String(r.status));
+        return r.json();
+      })
+      .then((data) => {
+        if (!cancelled) setRx(data ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setLoadError("Could not load this prescription.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, reloadKey]);
 
-  async function issue() {
+  const load = () => {
+    setLoading(true);
+    setLoadError(null);
+    setReloadKey((k) => k + 1);
+  };
+
+  async function issue(override = false) {
     setActing(true);
-    const res = await fetch(`/api/prescriptions/${id}/issue`, { method: "POST" });
-    setActing(false);
-    if (!res.ok) { toast.error("Failed to issue."); return; }
-    setRx(await res.json());
-    toast.success("Prescription issued.");
+    try {
+      const res = await fetch(`/api/prescriptions/${id}/issue`, {
+        method: "POST",
+        ...(override
+          ? {
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                override: true,
+                overrideReason: overrideReason.trim(),
+              }),
+            }
+          : {}),
+      });
+      const body = await res.json().catch(() => null);
+      if (res.status === 409 && body && Array.isArray(body.findings)) {
+        setSafetyBlock(body as SafetyBlockResponse);
+        toast.warning("Issue blocked by the safety check.");
+        return;
+      }
+      if (!res.ok) {
+        toast.error("Failed to issue prescription.");
+        return;
+      }
+      const issued = body as IssueResponse;
+      setRx(issued);
+      setSafetyInfo(issued.safety ?? null);
+      setSafetyBlock(null);
+      setOverrideReason("");
+      toast.success(
+        issued.safety?.overridden
+          ? "Prescription issued with safety override."
+          : "Prescription issued.",
+      );
+    } catch {
+      toast.error("Network error issuing the prescription.");
+    } finally {
+      setActing(false);
+    }
   }
 
-  async function sendToPharmacy() {
+  async function dispatch(path: "send-pharmacy" | "send-lab", label: string) {
     setActing(true);
-    const res = await fetch(`/api/prescriptions/${id}/send-pharmacy`, { method: "POST" });
-    setActing(false);
-    if (!res.ok) { toast.error("Failed to send to pharmacy."); return; }
-    setRx(await res.json());
-    toast.success("Sent to pharmacy.");
-  }
-
-  async function sendToLab() {
-    setActing(true);
-    const res = await fetch(`/api/prescriptions/${id}/send-lab`, { method: "POST" });
-    setActing(false);
-    if (!res.ok) { toast.error("Failed to send to lab."); return; }
-    setRx(await res.json());
-    toast.success("Sent to lab.");
+    try {
+      const res = await fetch(`/api/prescriptions/${id}/${path}`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        toast.error(`Failed to ${label.toLowerCase()}.`);
+        return;
+      }
+      setRx(await res.json());
+      toast.success(`${label} done.`);
+    } catch {
+      toast.error(`Network error — could not ${label.toLowerCase()}.`);
+    } finally {
+      setActing(false);
+    }
   }
 
   function downloadPdf() {
@@ -60,113 +150,317 @@ export default function PrescriptionDetailPage({ params }: { params: Promise<{ i
     a.click();
   }
 
-  if (loading) return <p className="text-slate-500">Loading…</p>;
-  if (!rx) return <p className="text-red-500">Prescription not found.</p>;
+  if (loading) return <EcgLoading label="Loading prescription" />;
+
+  if (loadError) {
+    return (
+      <div
+        role="alert"
+        className="flex max-w-2xl items-start justify-between gap-4 rounded-xl border border-danger/25 bg-danger-tint p-4"
+      >
+        <div className="flex items-start gap-2">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden />
+          <p className="text-sm text-danger">{loadError}</p>
+        </div>
+        <Button variant="secondary" size="sm" onClick={load}>
+          <RefreshCw className="size-3.5" aria-hidden />
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
+  if (!rx) {
+    return (
+      <EmptyState
+        icon={Pill}
+        title="Prescription not found"
+        hint="This prescription may have been removed, or the link is out of date."
+      />
+    );
+  }
 
   const canIssue = rx.status === "DRAFT";
-  const canDispatch = rx.status === "ISSUED" || rx.status === "SENT_TO_PHARMACY" || rx.status === "SENT_TO_LAB";
+  const canDispatch =
+    rx.status === "ISSUED" ||
+    rx.status === "SENT_TO_PHARMACY" ||
+    rx.status === "SENT_TO_LAB";
 
   return (
-    <div className="max-w-xl">
-      <div className="flex items-start justify-between mb-6">
-        <div>
-          <h1 className="text-xl font-bold text-slate-800">Prescription</h1>
-          <p className="text-slate-500 text-sm mt-0.5">
-            {format(new Date(rx.createdAt), "MMM d, yyyy")}
-            {rx.issuedAt ? ` · Issued ${format(new Date(rx.issuedAt), "MMM d")}` : ""}
-            {rx.validUntil ? ` · Valid until ${rx.validUntil}` : ""}
-          </p>
-        </div>
-        <span className={`text-xs px-3 py-1 rounded-full font-medium ${STATUS_STYLES[rx.status] ?? "bg-slate-100 text-slate-500"}`}>
-          {rx.status.replace(/_/g, " ")}
-        </span>
-      </div>
+    <div className="max-w-3xl">
+      <PageHeader
+        eyebrow="Pharmacy"
+        title="Prescription"
+        description={[
+          `Created ${format(new Date(rx.createdAt), "MMM d, yyyy")}`,
+          rx.issuedAt ? `Issued ${format(new Date(rx.issuedAt), "MMM d, yyyy")}` : null,
+          rx.validUntil ? `Valid until ${rx.validUntil}` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")}
+        actions={<StatusBadge status={statusOf(PRESCRIPTION_STATUS, rx.status)} />}
+      />
 
-      {rx.consultationNotes && (
-        <div className="mb-4">
-          <h2 className="text-sm font-semibold text-slate-700 mb-1">Consultation Notes</h2>
-          <p className="text-sm text-slate-600 border-l-4 border-slate-200 pl-3">{rx.consultationNotes}</p>
-        </div>
-      )}
-
-      {rx.diagnosisCodes && (
-        <div className="mb-4">
-          <h2 className="text-sm font-semibold text-slate-700 mb-1">Diagnosis Codes</h2>
-          <p className="text-sm text-slate-600">{rx.diagnosisCodes}</p>
-        </div>
-      )}
-
-      {rx.medications && rx.medications.length > 0 && (
-        <div className="mb-5">
-          <h2 className="text-sm font-semibold text-slate-700 mb-2">Medications</h2>
-          <div className="space-y-2">
-            {rx.medications.map((m) => (
-              <div key={m.id} className="border border-slate-200 rounded-lg px-4 py-3 bg-white text-sm">
-                <div className="flex items-baseline gap-2">
-                  <span className="font-medium text-slate-800">{m.medicationName}</span>
-                  {m.genericName && <span className="text-slate-400 text-xs">({m.genericName})</span>}
+      <div className="space-y-6">
+        {safetyBlock && (
+          <Card
+            as="section"
+            className="border-danger/40 bg-danger-tint"
+          >
+            <div className="flex items-start gap-3">
+              <ShieldAlert className="mt-0.5 size-5 shrink-0 text-danger" aria-hidden />
+              <div className="min-w-0 flex-1">
+                <h2 className="font-display text-base font-semibold text-danger">
+                  Issue blocked by safety check
+                </h2>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <StatusBadge status={statusOf(SEVERITY, safetyBlock.severity)} />
+                  <p className="text-sm text-ink">{safetyBlock.summary}</p>
                 </div>
-                <p className="text-slate-500 text-xs mt-0.5">
-                  {m.dosage} · {m.frequency}
-                  {m.duration ? ` · ${m.duration}` : ""}
-                  {m.route ? ` · ${m.route}` : ""}
-                </p>
-                {m.instructions && <p className="text-slate-400 text-xs mt-0.5">{m.instructions}</p>}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {rx.labOrders && rx.labOrders.length > 0 && (
-        <div className="mb-5">
-          <h2 className="text-sm font-semibold text-slate-700 mb-2">Lab Orders</h2>
-          <div className="space-y-2">
-            {rx.labOrders.map((l) => (
-              <div key={l.id} className="border border-slate-200 rounded-lg px-4 py-3 bg-white text-sm">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium text-slate-800">{l.testName}</span>
-                  <span className="text-slate-400 text-xs">{l.testCode}</span>
-                  <span className={`text-xs px-1.5 py-0.5 rounded ${
-                    l.urgency === "STAT" ? "bg-red-100 text-red-600"
-                    : l.urgency === "URGENT" ? "bg-amber-100 text-amber-700"
-                    : "bg-slate-100 text-slate-500"
-                  }`}>{l.urgency}</span>
-                </div>
-                {l.clinicalIndication && (
-                  <p className="text-slate-400 text-xs mt-0.5">{l.clinicalIndication}</p>
+                {safetyBlock.findings.length > 0 && (
+                  <ul className="mt-3 space-y-2">
+                    {safetyBlock.findings.map((f, i) => (
+                      <li
+                        key={i}
+                        className="rounded-lg border border-danger/25 bg-card p-3 text-sm"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-medium text-ink">
+                            {f.type.replaceAll("_", " ")}
+                          </span>
+                          <StatusBadge status={statusOf(SEVERITY, f.severity)} />
+                        </div>
+                        <p className="mt-1 text-ink-muted">{f.description}</p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {safetyBlock.overrideAllowed ? (
+                  <div className="mt-4 space-y-3">
+                    <Field
+                      label="Override reason"
+                      required
+                      hint="Document the clinical justification for issuing despite these findings."
+                    >
+                      {(ids) => (
+                        <textarea
+                          {...ids}
+                          className="input min-h-20 bg-card"
+                          value={overrideReason}
+                          onChange={(e) => setOverrideReason(e.target.value)}
+                        />
+                      )}
+                    </Field>
+                    <div className="flex gap-3">
+                      <Button
+                        variant="danger"
+                        loading={acting}
+                        disabled={!overrideReason.trim()}
+                        onClick={() => issue(true)}
+                      >
+                        Override and issue
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        disabled={acting}
+                        onClick={() => {
+                          setSafetyBlock(null);
+                          setOverrideReason("");
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="mt-3 text-sm font-medium text-danger">
+                    An override is not permitted for these findings.
+                  </p>
                 )}
               </div>
-            ))}
-          </div>
-        </div>
-      )}
+            </div>
+          </Card>
+        )}
 
-      <div className="flex gap-3 flex-wrap pt-2">
-        {canIssue && (
-          <button onClick={issue} disabled={acting}
-            className="bg-green-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-green-700 disabled:opacity-40 transition-colors">
-            {acting ? "…" : "Issue Prescription"}
-          </button>
+        {safetyInfo && safetyInfo.checked && (
+          <Card as="section">
+            <div className="flex items-start gap-3">
+              {safetyInfo.overridden ? (
+                <ShieldAlert className="mt-0.5 size-5 shrink-0 text-warn" aria-hidden />
+              ) : (
+                <ShieldCheck className="mt-0.5 size-5 shrink-0 text-ok" aria-hidden />
+              )}
+              <div className="min-w-0 flex-1">
+                <CardTitle>Safety check</CardTitle>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <StatusBadge status={statusOf(SEVERITY, safetyInfo.severity)} />
+                  {safetyInfo.requiresPharmacistReview && (
+                    <Badge tone="warn">Pharmacist review required</Badge>
+                  )}
+                  {safetyInfo.overridden && (
+                    <Badge tone="danger">Overridden</Badge>
+                  )}
+                </div>
+                <p className="mt-2 text-sm text-ink">{safetyInfo.summary}</p>
+                {safetyInfo.findings && safetyInfo.findings.length > 0 && (
+                  <ul className="mt-3 space-y-2">
+                    {safetyInfo.findings.map((f, i) => (
+                      <li key={i} className="rounded-lg bg-card-2 p-3 text-sm">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-medium text-ink">
+                            {f.type.replaceAll("_", " ")}
+                          </span>
+                          <StatusBadge status={statusOf(SEVERITY, f.severity)} />
+                        </div>
+                        <p className="mt-1 text-ink-muted">{f.description}</p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </Card>
         )}
-        {canDispatch && (
-          <>
-            <button onClick={sendToPharmacy} disabled={acting}
-              className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 disabled:opacity-40 transition-colors">
-              {acting ? "…" : "Send to Pharmacy"}
-            </button>
-            {rx.labOrders && rx.labOrders.length > 0 && (
-              <button onClick={sendToLab} disabled={acting}
-                className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 disabled:opacity-40 transition-colors">
-                {acting ? "…" : "Send to Lab"}
-              </button>
-            )}
-            <button onClick={downloadPdf}
-              className="text-sm px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 transition-colors">
-              Download PDF
-            </button>
-          </>
+
+        {rx.consultationNotes && (
+          <Card as="section">
+            <DetailLabel>Consultation notes</DetailLabel>
+            <p className="mt-2 border-l-2 border-brand/30 pl-3 text-sm text-ink">
+              {rx.consultationNotes}
+            </p>
+          </Card>
         )}
+
+        {rx.diagnosisCodes && (
+          <Card as="section">
+            <DetailLabel>Diagnosis codes</DetailLabel>
+            <p className="tabular mt-2 text-sm text-ink">{rx.diagnosisCodes}</p>
+          </Card>
+        )}
+
+        <Card as="section" className="p-0">
+          <div className="px-5 pt-5">
+            <CardTitle>Medications</CardTitle>
+          </div>
+          {rx.medications && rx.medications.length > 0 ? (
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-ink-faint">
+                    <th scope="col" className="px-5 py-2 font-medium">
+                      Medication
+                    </th>
+                    <th scope="col" className="px-4 py-2 font-medium">
+                      Dosage
+                    </th>
+                    <th scope="col" className="px-4 py-2 font-medium">
+                      Frequency
+                    </th>
+                    <th scope="col" className="px-4 py-2 font-medium">
+                      Duration
+                    </th>
+                    <th scope="col" className="px-4 py-2 font-medium">
+                      Route
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rx.medications.map((m) => (
+                    <tr key={m.id} className="border-b border-line last:border-0">
+                      <td className="px-5 py-3">
+                        <span className="font-medium text-ink">
+                          {m.medicationName}
+                        </span>
+                        {m.genericName && (
+                          <span className="block text-xs text-ink-faint">
+                            {m.genericName}
+                          </span>
+                        )}
+                        {m.instructions && (
+                          <span className="block text-xs text-ink-muted">
+                            {m.instructions}
+                          </span>
+                        )}
+                      </td>
+                      <td className="tabular px-4 py-3 text-ink">{m.dosage}</td>
+                      <td className="px-4 py-3 text-ink">{m.frequency}</td>
+                      <td className="px-4 py-3 text-ink-muted">
+                        {m.duration || "—"}
+                      </td>
+                      <td className="px-4 py-3 text-ink-muted">{m.route || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="px-5 pb-5 pt-2 text-sm text-ink-faint">
+              No medications on this prescription.
+            </p>
+          )}
+        </Card>
+
+        {rx.labOrders && rx.labOrders.length > 0 && (
+          <Card as="section">
+            <CardTitle className="mb-3">Lab orders</CardTitle>
+            <ul className="space-y-2">
+              {rx.labOrders.map((l) => (
+                <li
+                  key={l.id}
+                  className="rounded-lg border border-line bg-card-2/40 px-4 py-3 text-sm"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <FlaskConical className="size-4 text-ink-faint" aria-hidden />
+                    <span className="font-medium text-ink">{l.testName}</span>
+                    <span className="tabular text-xs text-ink-faint">
+                      {l.testCode}
+                    </span>
+                    <StatusBadge status={statusOf(LAB_PRIORITY, l.urgency)} />
+                  </div>
+                  {l.clinicalIndication && (
+                    <p className="mt-1 text-xs text-ink-muted">
+                      {l.clinicalIndication}
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </Card>
+        )}
+
+        <div className="flex flex-wrap gap-3">
+          {canIssue && !safetyBlock && (
+            <Button onClick={() => issue()} loading={acting}>
+              Issue prescription
+            </Button>
+          )}
+          {canDispatch && (
+            <>
+              <Button
+                variant="secondary"
+                onClick={() => dispatch("send-pharmacy", "Send to pharmacy")}
+                disabled={acting}
+              >
+                <Send className="size-4" aria-hidden />
+                Send to pharmacy
+              </Button>
+              {rx.labOrders && rx.labOrders.length > 0 && (
+                <Button
+                  variant="secondary"
+                  onClick={() => dispatch("send-lab", "Send to lab")}
+                  disabled={acting}
+                >
+                  <FlaskConical className="size-4" aria-hidden />
+                  Send to lab
+                </Button>
+              )}
+              <Button variant="secondary" onClick={downloadPdf}>
+                <Download className="size-4" aria-hidden />
+                Download PDF
+              </Button>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

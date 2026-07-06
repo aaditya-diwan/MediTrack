@@ -23,6 +23,11 @@ public class PrescriptionPersistenceMapper {
         e.setDiagnosisCodes(p.getDiagnosisCodes());
         e.setIssuedAt(p.getIssuedAt());
         e.setValidUntil(p.getValidUntil());
+        e.setSafetyCheckPerformed(p.isSafetyCheckPerformed());
+        e.setSafetySeverity(p.getSafetySeverity());
+        e.setSafetySummary(p.getSafetySummary());
+        e.setSafetyOverridden(p.isSafetyOverridden());
+        e.setSafetyOverrideReason(p.getSafetyOverrideReason());
 
         if (p.getMedications() != null) {
             List<PrescriptionMedicationEntity> meds = p.getMedications().stream().map(m -> {
@@ -78,6 +83,9 @@ public class PrescriptionPersistenceMapper {
                 .appointmentId(e.getAppointmentId()).status(PrescriptionStatus.valueOf(e.getStatus()))
                 .consultationNotes(e.getConsultationNotes()).diagnosisCodes(e.getDiagnosisCodes())
                 .medications(meds).labOrders(labs).issuedAt(e.getIssuedAt()).validUntil(e.getValidUntil())
-                .createdAt(e.getCreatedAt()).updatedAt(e.getUpdatedAt()).build();
+                .createdAt(e.getCreatedAt()).updatedAt(e.getUpdatedAt())
+                .safetyCheckPerformed(e.isSafetyCheckPerformed()).safetySeverity(e.getSafetySeverity())
+                .safetySummary(e.getSafetySummary()).safetyOverridden(e.isSafetyOverridden())
+                .safetyOverrideReason(e.getSafetyOverrideReason()).build();
     }
 }

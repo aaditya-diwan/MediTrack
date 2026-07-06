@@ -24,4 +24,11 @@ public class Prescription {
     private LocalDate validUntil;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+
+    // AI drug-safety screen outcome captured at issue time
+    private boolean safetyCheckPerformed;
+    private String safetySeverity;
+    private String safetySummary;
+    private boolean safetyOverridden;
+    private String safetyOverrideReason;
 }

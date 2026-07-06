@@ -24,6 +24,14 @@ public class PrescriptionEntity {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
+    @Column(name = "safety_check_performed", nullable = false)
+    private boolean safetyCheckPerformed;
+    @Column(name = "safety_severity") private String safetySeverity;
+    @Column(name = "safety_summary", columnDefinition = "TEXT") private String safetySummary;
+    @Column(name = "safety_overridden", nullable = false)
+    private boolean safetyOverridden;
+    @Column(name = "safety_override_reason", columnDefinition = "TEXT") private String safetyOverrideReason;
+
     @OneToMany(mappedBy = "prescription", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<PrescriptionMedicationEntity> medications;
 

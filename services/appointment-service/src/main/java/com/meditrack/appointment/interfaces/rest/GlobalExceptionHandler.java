@@ -1,6 +1,9 @@
 package com.meditrack.appointment.interfaces.rest;
 
 import com.meditrack.appointment.application.exception.AppointmentNotFoundException;
+import com.meditrack.appointment.application.exception.DoctorInactiveException;
+import com.meditrack.appointment.application.exception.DoctorNotFoundException;
+import com.meditrack.appointment.application.exception.OutsideAvailabilityException;
 import com.meditrack.appointment.application.exception.SlotAlreadyBookedException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -21,6 +24,18 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(SlotAlreadyBookedException.class)
     public ResponseEntity<Map<String, Object>> handleConflict(SlotAlreadyBookedException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(Map.of("error", ex.getMessage(), "timestamp", Instant.now().toString()));
+    }
+
+    @ExceptionHandler({DoctorNotFoundException.class, DoctorInactiveException.class})
+    public ResponseEntity<Map<String, Object>> handleUnprocessableDoctor(RuntimeException ex) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(Map.of("error", ex.getMessage(), "timestamp", Instant.now().toString()));
+    }
+
+    @ExceptionHandler(OutsideAvailabilityException.class)
+    public ResponseEntity<Map<String, Object>> handleOutsideAvailability(OutsideAvailabilityException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(Map.of("error", ex.getMessage(), "timestamp", Instant.now().toString()));
     }

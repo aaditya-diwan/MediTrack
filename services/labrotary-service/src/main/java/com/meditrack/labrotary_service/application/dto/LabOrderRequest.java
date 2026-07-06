@@ -30,6 +30,9 @@ public class LabOrderRequest {
 
     private String preAuthorizationId;
 
+    /** Optional reference to the originating record in another service (e.g. prescriptionId). */
+    private String externalReference;
+
     private OffsetDateTime orderTimestamp;
 
     @NotNull(message = "Priority is required")

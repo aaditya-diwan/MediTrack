@@ -1,10 +1,24 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { use } from "react";
+import { use, useEffect, useState } from "react";
 import Link from "next/link";
+import { FileSearch, Plus, ShieldOff } from "lucide-react";
 import InsurancePolicyCard from "@/components/InsurancePolicyCard";
-import { PolicyResponse } from "@/lib/types";
+import { PatientPicker } from "@/components/PatientPicker";
+import { PolicyResponse, PatientResponse } from "@/lib/types";
+import { Button, EmptyState, ListSkeleton, PageHeader } from "@/components/ui";
+
+function NewPolicyLink() {
+  return (
+    <Link
+      href="/insurance/new"
+      className="inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-strong"
+    >
+      <Plus className="size-4" aria-hidden />
+      New policy
+    </Link>
+  );
+}
 
 export default function InsurancePage({
   searchParams,
@@ -12,10 +26,12 @@ export default function InsurancePage({
   searchParams: Promise<{ patientId?: string }>;
 }) {
   const { patientId } = use(searchParams);
+  const [selected, setSelected] = useState<PatientResponse | null>(null);
   const [policies, setPolicies] = useState<PolicyResponse[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
-  const [query, setQuery] = useState(patientId ?? "");
+  const [error, setError] = useState<string | null>(null);
+  const [lastId, setLastId] = useState<string | null>(null);
 
   useEffect(() => {
     if (patientId) {
@@ -26,52 +42,90 @@ export default function InsurancePage({
   async function loadPolicies(id: string) {
     setLoading(true);
     setSearched(true);
-    const res = await fetch(`/api/insurance/policies/patient/${id}`);
-    setLoading(false);
-    if (res.ok) setPolicies(await res.json());
-    else setPolicies([]);
+    setError(null);
+    setLastId(id);
+    try {
+      const res = await fetch(`/api/insurance/policies/patient/${id}`);
+      if (!res.ok) {
+        setPolicies([]);
+        return;
+      }
+      const data = await res.json();
+      setPolicies(Array.isArray(data) ? data : []);
+    } catch {
+      setPolicies([]);
+      setError("Could not load policies. Check your connection and try again.");
+    } finally {
+      setLoading(false);
+    }
   }
 
-  async function handleSearch(e: React.FormEvent) {
-    e.preventDefault();
-    if (!query.trim()) return;
-    loadPolicies(query.trim());
+  function handleSelect(patient: PatientResponse | null) {
+    setSelected(patient);
+    if (patient) {
+      loadPolicies(patient.id);
+    } else {
+      setPolicies([]);
+      setSearched(false);
+      setError(null);
+    }
   }
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-slate-800">Insurance Policies</h1>
-        <Link
-          href="/insurance/new"
-          className="bg-slate-800 text-white text-sm px-4 py-2 rounded-lg hover:bg-slate-700 transition-colors"
-        >
-          + New Policy
-        </Link>
+      <PageHeader
+        eyebrow="Insurance"
+        title="Insurance policies"
+        description="Look up a patient to review their coverage and policy details."
+        actions={<NewPolicyLink />}
+      />
+
+      <div className="mb-6 max-w-md">
+        <PatientPicker selected={selected} onSelect={handleSelect} />
       </div>
-      <form onSubmit={handleSearch} className="flex gap-2 mb-6">
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Patient ID (UUID)"
-          className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
-        />
-        <button
-          type="submit"
-          className="bg-slate-700 text-white text-sm px-4 py-2 rounded-lg hover:bg-slate-600 transition-colors"
-        >
-          Search
-        </button>
-      </form>
-      {loading && <p className="text-slate-500 text-sm">Loading…</p>}
-      {!loading && searched && policies.length === 0 && (
-        <p className="text-slate-500 text-sm">No policies found for this patient.</p>
+
+      {loading && <ListSkeleton rows={3} />}
+
+      {!loading && error && (
+        <div className="rounded-xl border border-danger/25 bg-danger-tint p-4">
+          <p className="text-sm font-medium text-danger">{error}</p>
+          {lastId && (
+            <Button
+              variant="secondary"
+              size="sm"
+              className="mt-3"
+              onClick={() => loadPolicies(lastId)}
+            >
+              Retry
+            </Button>
+          )}
+        </div>
       )}
-      <div className="space-y-4">
-        {policies.map((p) => (
-          <InsurancePolicyCard key={p.policyId} policy={p} />
-        ))}
-      </div>
+
+      {!loading && !error && !searched && (
+        <EmptyState
+          icon={FileSearch}
+          title="Select a patient"
+          hint="Search for a patient above to view their insurance policies."
+        />
+      )}
+
+      {!loading && !error && searched && policies.length === 0 && (
+        <EmptyState
+          icon={ShieldOff}
+          title="No policies on file"
+          hint="This patient has no insurance policies yet. You can add one now."
+          action={<NewPolicyLink />}
+        />
+      )}
+
+      {!loading && !error && policies.length > 0 && (
+        <div className="space-y-4">
+          {policies.map((p) => (
+            <InsurancePolicyCard key={p.policyId} policy={p} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

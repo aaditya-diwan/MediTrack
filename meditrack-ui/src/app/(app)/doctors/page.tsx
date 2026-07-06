@@ -1,88 +1,164 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { AlertTriangle, Stethoscope } from "lucide-react";
 import { DoctorResponse, SPECIALIZATIONS, formatSpecialization } from "@/lib/types";
+import {
+  Badge,
+  Button,
+  EmptyState,
+  Field,
+  ListSkeleton,
+  PageHeader,
+} from "@/components/ui";
+
+function DoctorCard({ doctor }: { doctor: DoctorResponse }) {
+  return (
+    <Link
+      href={`/doctors/${doctor.id}`}
+      className="flex items-start gap-4 rounded-xl border border-line bg-card p-5 shadow-[0_1px_2px_rgb(0_0_0/0.04)] transition-all hover:border-brand hover:shadow-sm"
+    >
+      <span
+        aria-hidden
+        className="flex size-11 shrink-0 items-center justify-center rounded-full bg-brand-tint text-sm font-semibold text-brand-ink"
+      >
+        {doctor.firstName?.[0]}
+        {doctor.lastName?.[0]}
+      </span>
+      <span className="min-w-0">
+        <span className="flex flex-wrap items-center gap-2">
+          <span className="truncate text-sm font-semibold text-ink">{doctor.fullName}</span>
+          {!doctor.active && <Badge tone="neutral">Inactive</Badge>}
+        </span>
+        <span className="mt-1 flex flex-wrap items-center gap-2">
+          <Badge tone="brand">{formatSpecialization(doctor.specialization)}</Badge>
+          <span className="text-xs text-ink-muted">
+            {doctor.yearsOfExperience} yrs experience
+          </span>
+        </span>
+        {doctor.qualifications && (
+          <span className="mt-1.5 block truncate text-xs text-ink-faint">
+            {doctor.qualifications}
+          </span>
+        )}
+      </span>
+    </Link>
+  );
+}
 
 export default function DoctorsPage() {
   const [specialization, setSpecialization] = useState("");
   const [doctors, setDoctors] = useState<DoctorResponse[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [searched, setSearched] = useState(false);
+  const [error, setError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
+  const requestKey = `${specialization}:${reloadKey}`;
+  const loading = loadedKey !== requestKey;
 
-  async function search() {
-    setLoading(true);
-    setSearched(true);
+  useEffect(() => {
+    let cancelled = false;
     const url = specialization
       ? `/api/doctors?specialization=${specialization}`
       : `/api/doctors`;
-    const res = await fetch(url);
-    setLoading(false);
-    if (res.ok) setDoctors(await res.json());
-    else setDoctors([]);
-  }
+    fetch(url)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((data) => {
+        if (cancelled) return;
+        setDoctors(Array.isArray(data) ? data : []);
+        setError(false);
+        setLoadedKey(requestKey);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setError(true);
+        setDoctors([]);
+        setLoadedKey(requestKey);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [specialization, requestKey]);
+
+  const retryLoad = () => {
+    setError(false);
+    setReloadKey((k) => k + 1);
+  };
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-slate-800">Doctors</h1>
+      <PageHeader
+        eyebrow="Directory"
+        title="Doctors"
+        description="Browse the medical staff and open a profile to see availability."
+      />
+
+      <div className="mb-6 max-w-xs">
+        <Field label="Specialty">
+          {(ids) => (
+            <select
+              {...ids}
+              value={specialization}
+              onChange={(e) => {
+                setSpecialization(e.target.value);
+                setError(false);
+              }}
+              className="input"
+            >
+              <option value="">All specialties</option>
+              {SPECIALIZATIONS.map((s) => (
+                <option key={s} value={s}>
+                  {formatSpecialization(s)}
+                </option>
+              ))}
+            </select>
+          )}
+        </Field>
       </div>
 
-      <div className="flex gap-3 mb-6">
-        <select
-          value={specialization}
-          onChange={(e) => setSpecialization(e.target.value)}
-          className="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400 bg-white"
-        >
-          <option value="">All Specializations</option>
-          {SPECIALIZATIONS.map((s) => (
-            <option key={s} value={s}>
-              {formatSpecialization(s)}
-            </option>
-          ))}
-        </select>
-        <button
-          onClick={search}
-          className="bg-slate-800 text-white text-sm px-4 py-2 rounded-lg hover:bg-slate-700 transition-colors"
-        >
-          {loading ? "Loading…" : "Search"}
-        </button>
-      </div>
+      {loading && <ListSkeleton rows={4} />}
 
-      {searched && !loading && doctors.length === 0 && (
-        <p className="text-slate-500 text-sm">No doctors found.</p>
+      {error && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-danger/25 bg-danger-tint px-4 py-3"
+        >
+          <div className="flex items-center gap-2 text-sm text-danger">
+            <AlertTriangle className="size-4 shrink-0" aria-hidden />
+            Failed to load the doctor directory.
+          </div>
+          <Button variant="secondary" size="sm" onClick={retryLoad}>
+            Retry
+          </Button>
+        </div>
       )}
 
-      <div className="space-y-3">
-        {doctors.map((d) => (
-          <Link
-            key={d.id}
-            href={`/doctors/${d.id}`}
-            className="block border border-slate-200 rounded-xl p-4 hover:border-slate-400 hover:shadow-sm transition-all bg-white"
-          >
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="font-semibold text-slate-800">{d.fullName}</p>
-                <p className="text-sm text-slate-500 mt-0.5">
-                  {formatSpecialization(d.specialization)} · {d.yearsOfExperience}y exp
-                </p>
-                {d.qualifications && (
-                  <p className="text-xs text-slate-400 mt-1">{d.qualifications}</p>
-                )}
-              </div>
-              <span
-                className={`text-xs px-2 py-1 rounded-full font-medium ${
-                  d.active
-                    ? "bg-green-100 text-green-700"
-                    : "bg-slate-100 text-slate-500"
-                }`}
-              >
-                {d.active ? "Active" : "Inactive"}
-              </span>
-            </div>
-          </Link>
-        ))}
-      </div>
+      {!loading && !error && doctors.length === 0 && (
+        <EmptyState
+          icon={Stethoscope}
+          title="No doctors found"
+          hint={
+            specialization
+              ? `No doctors are registered under ${formatSpecialization(specialization)}.`
+              : "No doctors are registered yet."
+          }
+          action={
+            specialization ? (
+              <Button variant="secondary" size="sm" onClick={() => setSpecialization("")}>
+                Show all specialties
+              </Button>
+            ) : undefined
+          }
+        />
+      )}
+
+      {!loading && !error && doctors.length > 0 && (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {doctors.map((d) => (
+            <DoctorCard key={d.id} doctor={d} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

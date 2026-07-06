@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import Navbar from "@/components/Navbar";
+import { AppShell } from "@/components/shell/AppShell";
 import { roleFromJwt } from "@/lib/rbac";
 
 export default async function AppLayout({
@@ -10,12 +10,5 @@ export default async function AppLayout({
   const cookieStore = await cookies();
   const role = roleFromJwt(cookieStore.get("token")?.value);
 
-  return (
-    <div className="min-h-screen flex flex-col">
-      <Navbar role={role} />
-      <main className="flex-1 max-w-5xl mx-auto w-full px-6 py-8">
-        {children}
-      </main>
-    </div>
-  );
+  return <AppShell role={role}>{children}</AppShell>;
 }

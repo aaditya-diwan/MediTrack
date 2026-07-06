@@ -437,6 +437,7 @@ services:
       - kafka
       - postgres
       - redis
+      - doctor-service
     ports:
       - "8085:8085"
     environment:
@@ -451,6 +452,7 @@ services:
       SPRING_DATA_REDIS_PORT: 6379
       SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
+      DOCTOR_SERVICE_URL: http://doctor-service:8084
       MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: http://jaeger:9411/api/v2/spans
       MANAGEMENT_TRACING_SAMPLING_PROBABILITY: 1.0
     networks:
@@ -470,6 +472,7 @@ services:
       - kafka
       - postgres
       - redis
+      - ai-service
     ports:
       - "8086:8086"
     environment:
@@ -484,6 +487,7 @@ services:
       SPRING_DATA_REDIS_PORT: 6379
       SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
+      AI_SERVICE_URL: http://ai-service:8089
       MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: http://jaeger:9411/api/v2/spans
       MANAGEMENT_TRACING_SAMPLING_PROBABILITY: 1.0
     networks:

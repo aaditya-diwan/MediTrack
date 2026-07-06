@@ -10,6 +10,8 @@ import com.meditrack.patient.domain.model.valueobjects.MRN;
 import com.meditrack.patient.domain.model.valueobjects.PatientId;
 import com.meditrack.patient.domain.model.valueobjects.SSN;
 import com.meditrack.patient.domain.repository.PatientRepository;
+import com.meditrack.patient.infrastructure.messaging.EventTopics;
+import com.meditrack.patient.infrastructure.messaging.event.PatientCreatedEvent;
 import com.meditrack.patient.interfaces.dto.request.CreatePatientRequest;
 import com.meditrack.patient.interfaces.dto.request.UpdatePatientRequest;
 import com.meditrack.patient.interfaces.dto.response.PatientResponse;
@@ -17,10 +19,12 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CachePut;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import com.meditrack.patient.application.exception.PatientNotFoundException;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.UUID;
 
 @Slf4j
@@ -29,11 +33,15 @@ import java.util.UUID;
 public class PatientCommandService {
 
     private final PatientRepository patientRepository;
+    private final ApplicationEventPublisher eventPublisher;
     private final Counter patientRegistrationsTotal;
     private final Counter patientUpdatesTotal;
 
-    public PatientCommandService(PatientRepository patientRepository, MeterRegistry meterRegistry) {
+    public PatientCommandService(PatientRepository patientRepository,
+                                 MeterRegistry meterRegistry,
+                                 ApplicationEventPublisher eventPublisher) {
         this.patientRepository = patientRepository;
+        this.eventPublisher = eventPublisher;
         this.patientRegistrationsTotal = Counter.builder("meditrack_patient_registrations_total")
                 .description("Total number of patient registrations")
                 .register(meterRegistry);
@@ -65,7 +73,30 @@ public class PatientCommandService {
         Patient savedPatient = patientRepository.save(patient);
         patientRegistrationsTotal.increment();
         log.info("Patient registered [patientId={}, mrn={}]", savedPatient.getId().getId(), request.getMrn());
+
+        // Relayed to Kafka by PatientEventProducer only AFTER this transaction commits.
+        eventPublisher.publishEvent(buildPatientCreatedEvent(savedPatient));
+
         return ApplicationPatientMapper.toResponse(savedPatient);
+    }
+
+    /** Builds the patient-created integration event. Deliberately excludes the SSN. */
+    private PatientCreatedEvent buildPatientCreatedEvent(Patient patient) {
+        Instant now = Instant.now();
+        return PatientCreatedEvent.builder()
+                .eventId(UUID.randomUUID().toString())
+                .eventType(EventTopics.EVENT_TYPE_PATIENT_CREATED)
+                .timestamp(now.toEpochMilli())
+                .source("patient-service")
+                .patient(PatientCreatedEvent.PatientData.builder()
+                        .patientId(patient.getId().getId().toString())
+                        .mrn(patient.getMrn() != null ? patient.getMrn().getValue() : null)
+                        .firstName(patient.getFirstName())
+                        .lastName(patient.getLastName())
+                        .dateOfBirth(patient.getDateOfBirth() != null ? patient.getDateOfBirth().toString() : null)
+                        .createdAt(now)
+                        .build())
+                .build();
     }
 
     @CachePut(value = "patients", key = "#patientId")

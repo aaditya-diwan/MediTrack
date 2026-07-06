@@ -24,6 +24,7 @@ export interface NavItem {
 const CLINICAL: Role[] = ["ADMIN", "DOCTOR", "NURSE", "LAB_TECH"];
 
 export const NAV_ITEMS: NavItem[] = [
+  { href: "/dashboard", label: "Overview", roles: CLINICAL },
   { href: "/patients", label: "Patients", roles: CLINICAL },
   { href: "/doctors", label: "Doctors", roles: CLINICAL },
   { href: "/appointments", label: "Appointments", roles: CLINICAL },
@@ -36,14 +37,14 @@ export const NAV_ITEMS: NavItem[] = [
 
 /** Where each role is sent after login and from the app root. */
 export const LANDING: Record<Role, string> = {
-  ADMIN: "/patients",
+  ADMIN: "/dashboard",
   DOCTOR: "/doctor-dashboard",
-  NURSE: "/patients",
+  NURSE: "/dashboard",
   LAB_TECH: "/lab/orders",
 };
 
 export function landingFor(role: Role | null): string {
-  return role ? LANDING[role] : "/patients";
+  return role ? LANDING[role] : "/dashboard";
 }
 
 /** Nav links visible to the given role (unknown role => empty). */

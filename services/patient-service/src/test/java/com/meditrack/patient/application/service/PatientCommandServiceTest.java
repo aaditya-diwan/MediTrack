@@ -7,22 +7,27 @@ import com.meditrack.patient.domain.model.valueobjects.MRN;
 import com.meditrack.patient.domain.model.valueobjects.PatientId;
 import com.meditrack.patient.domain.model.valueobjects.SSN;
 import com.meditrack.patient.domain.repository.PatientRepository;
+import com.meditrack.patient.infrastructure.messaging.event.PatientCreatedEvent;
 import com.meditrack.patient.interfaces.dto.request.CreatePatientRequest;
 import com.meditrack.patient.interfaces.dto.request.UpdatePatientRequest;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.LocalDate;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -30,6 +35,9 @@ public class PatientCommandServiceTest {
 
     @Mock
     private PatientRepository patientRepository;
+
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
 
     // Constructed manually so we can provide a real MeterRegistry (SimpleMeterRegistry is in-memory, no infra needed)
     private PatientCommandService patientCommandService;
@@ -40,7 +48,7 @@ public class PatientCommandServiceTest {
 
     @BeforeEach
     void setUp() {
-        patientCommandService = new PatientCommandService(patientRepository, new SimpleMeterRegistry());
+        patientCommandService = new PatientCommandService(patientRepository, new SimpleMeterRegistry(), eventPublisher);
 
         patient = new Patient();
         patient.setId(PatientId.generate());
@@ -85,6 +93,31 @@ public class PatientCommandServiceTest {
 
         assertNotNull(response);
         assertEquals(patient.getFirstName(), response.getFirstName());
+    }
+
+    @Test
+    void createPatient_shouldPublishPatientCreatedEventWithoutSsn() {
+        when(patientRepository.save(any(Patient.class))).thenReturn(patient);
+
+        patientCommandService.createPatient(createPatientRequest);
+
+        ArgumentCaptor<PatientCreatedEvent> eventCaptor = ArgumentCaptor.forClass(PatientCreatedEvent.class);
+        verify(eventPublisher).publishEvent(eventCaptor.capture());
+
+        PatientCreatedEvent event = eventCaptor.getValue();
+        assertNotNull(event.getEventId());
+        assertEquals("patient.created.v1", event.getEventType());
+        assertEquals("patient-service", event.getSource());
+        assertNotNull(event.getPatient());
+        assertEquals(patient.getId().getId().toString(), event.getPatient().getPatientId());
+        assertEquals("MRN123", event.getPatient().getMrn());
+        assertEquals("John", event.getPatient().getFirstName());
+        assertEquals("Doe", event.getPatient().getLastName());
+        assertEquals("1990-01-01", event.getPatient().getDateOfBirth());
+        assertNotNull(event.getPatient().getCreatedAt());
+
+        // The event must never carry the SSN
+        assertFalse(event.toString().contains("SSN123"));
     }
 
     @Test

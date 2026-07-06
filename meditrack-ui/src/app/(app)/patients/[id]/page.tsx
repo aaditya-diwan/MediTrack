@@ -1,13 +1,30 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { use } from "react";
-import { PatientResponse, MedicalRecordResponse } from "@/lib/types";
+import { FlaskConical, Plus, ShieldCheck } from "lucide-react";
+import { toast } from "sonner";
+import { PatientResponse, MedicalRecordResponse, DoctorResponse } from "@/lib/types";
 import MedicalRecordList from "@/components/MedicalRecordList";
+import { DoctorPicker } from "@/components/DoctorPicker";
+import {
+  Button,
+  Card,
+  DetailLabel,
+  DetailValue,
+  EcgLoading,
+  Field,
+  PageHeader,
+} from "@/components/ui";
 import { format } from "date-fns";
 
 type Tab = "overview" | "records" | "order-labs";
+
+const TABS: { key: Tab; label: string }[] = [
+  { key: "overview", label: "Overview" },
+  { key: "records", label: "Medical Records" },
+  { key: "order-labs", label: "Order Labs" },
+];
 
 export default function PatientDetailPage({
   params,
@@ -18,51 +35,109 @@ export default function PatientDetailPage({
   const [patient, setPatient] = useState<PatientResponse | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
+    let cancelled = false;
     fetch(`/api/patients/${id}`)
-      .then((r) => r.json())
-      .then((data) => {
-        setPatient(data);
-        setLoading(false);
+      .then((r) => {
+        if (!r.ok) throw new Error(`Load failed (${r.status})`);
+        return r.json();
+      })
+      .then((data: PatientResponse) => {
+        if (!cancelled) setPatient(data);
+      })
+      .catch(() => {
+        if (!cancelled)
+          setError("Could not load this patient chart. Please try again.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
       });
-  }, [id]);
+    return () => {
+      cancelled = true;
+    };
+  }, [id, attempt]);
 
-  if (loading) return <p className="text-slate-500">Loading…</p>;
-  if (!patient) return <p className="text-red-500">Patient not found.</p>;
+  function retry() {
+    setLoading(true);
+    setError(null);
+    setAttempt((a) => a + 1);
+  }
+
+  if (loading) return <EcgLoading label="Loading chart" />;
+
+  if (error || !patient) {
+    return (
+      <div className="rounded-xl border border-danger/25 bg-danger-tint p-4">
+        <p className="text-sm font-medium text-danger">
+          {error ?? "Patient not found."}
+        </p>
+        <Button variant="secondary" size="sm" className="mt-3" onClick={retry}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div>
-      <div className="flex items-start justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">
-            {patient.firstName} {patient.lastName}
-          </h1>
-          <p className="text-slate-500 text-sm mt-0.5">
-            MRN: {patient.mrn} · DOB:{" "}
-            {format(new Date(patient.dateOfBirth), "MMM d, yyyy")}
-          </p>
-        </div>
-        <Link
-          href={`/insurance?patientId=${patient.id}`}
-          className="text-sm text-slate-600 border border-slate-300 rounded-lg px-3 py-1.5 hover:bg-slate-100 transition-colors"
-        >
-          View Insurance
-        </Link>
-      </div>
+      <PageHeader
+        eyebrow="Patient chart"
+        title={`${patient.firstName} ${patient.lastName}`}
+        actions={
+          <Link
+            href={`/insurance?patientId=${patient.id}`}
+            className="inline-flex items-center gap-2 rounded-lg border border-line-strong bg-card px-4 py-2 text-sm font-medium text-ink transition-colors hover:border-brand hover:text-brand-ink"
+          >
+            <ShieldCheck className="size-4" aria-hidden />
+            View insurance
+          </Link>
+        }
+      />
 
-      <div className="flex gap-1 border-b border-slate-200 mb-6">
-        {(["overview", "records", "order-labs"] as Tab[]).map((t) => (
+      <Card className="mb-6">
+        <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
+          <div>
+            <DetailLabel>MRN</DetailLabel>
+            <DetailValue mono>{patient.mrn}</DetailValue>
+          </div>
+          <div>
+            <DetailLabel>Date of birth</DetailLabel>
+            <DetailValue mono>
+              {format(new Date(patient.dateOfBirth), "MMM d, yyyy")}
+            </DetailValue>
+          </div>
+          <div>
+            <DetailLabel>Phone</DetailLabel>
+            <DetailValue mono>{patient.phoneNumber}</DetailValue>
+          </div>
+          <div>
+            <DetailLabel>Email</DetailLabel>
+            <DetailValue>{patient.email}</DetailValue>
+          </div>
+        </dl>
+      </Card>
+
+      <div
+        role="tablist"
+        aria-label="Patient chart sections"
+        className="mb-6 flex gap-1 border-b border-line"
+      >
+        {TABS.map((t) => (
           <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`px-4 py-2 text-sm capitalize transition-colors ${
-              tab === t
-                ? "border-b-2 border-slate-800 text-slate-800 font-medium"
-                : "text-slate-500 hover:text-slate-700"
+            key={t.key}
+            role="tab"
+            aria-selected={tab === t.key}
+            onClick={() => setTab(t.key)}
+            className={`-mb-px px-4 py-2 text-sm transition-colors ${
+              tab === t.key
+                ? "border-b-2 border-brand font-medium text-ink"
+                : "border-b-2 border-transparent text-ink-muted hover:text-ink"
             }`}
           >
-            {t === "order-labs" ? "Order Labs" : t === "records" ? "Medical Records" : "Overview"}
+            {t.label}
           </button>
         ))}
       </div>
@@ -77,23 +152,35 @@ export default function PatientDetailPage({
 }
 
 function OverviewTab({ patient }: { patient: PatientResponse }) {
-  const fields: [string, string][] = [
-    ["Email", patient.email],
-    ["Phone", patient.phoneNumber],
-    ["Address", patient.address],
-    ["Insurance Provider", patient.insuranceProvider],
-    ["Policy #", patient.insurancePolicyNumber],
-    ["SSN", patient.ssn],
-  ];
   return (
-    <dl className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm">
-      {fields.map(([label, value]) => (
-        <div key={label}>
-          <dt className="text-slate-400">{label}</dt>
-          <dd className="text-slate-800 font-medium">{value}</dd>
+    <Card>
+      <dl className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
+        <div>
+          <DetailLabel>Email</DetailLabel>
+          <DetailValue>{patient.email}</DetailValue>
         </div>
-      ))}
-    </dl>
+        <div>
+          <DetailLabel>Phone</DetailLabel>
+          <DetailValue mono>{patient.phoneNumber}</DetailValue>
+        </div>
+        <div className="sm:col-span-2">
+          <DetailLabel>Address</DetailLabel>
+          <DetailValue>{patient.address}</DetailValue>
+        </div>
+        <div>
+          <DetailLabel>Insurance provider</DetailLabel>
+          <DetailValue>{patient.insuranceProvider}</DetailValue>
+        </div>
+        <div>
+          <DetailLabel>Policy #</DetailLabel>
+          <DetailValue mono>{patient.insurancePolicyNumber}</DetailValue>
+        </div>
+        <div>
+          <DetailLabel>SSN</DetailLabel>
+          <DetailValue mono>{patient.ssn}</DetailValue>
+        </div>
+      </dl>
+    </Card>
   );
 }
 
@@ -106,12 +193,13 @@ function RecordsTab({
 }) {
   return (
     <div>
-      <div className="flex justify-end mb-4">
+      <div className="mb-4 flex justify-end">
         <Link
           href={`/patients/${patientId}/records/new`}
-          className="bg-slate-800 text-white text-sm px-4 py-2 rounded-lg hover:bg-slate-700 transition-colors"
+          className="inline-flex items-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-strong"
         >
-          + Add Record
+          <Plus className="size-4" aria-hidden />
+          Add record
         </Link>
       </div>
       <MedicalRecordList records={records} />
@@ -120,6 +208,7 @@ function RecordsTab({
 }
 
 function OrderLabsTab({ patient }: { patient: PatientResponse }) {
+  const [doctor, setDoctor] = useState<DoctorResponse | null>(null);
   const [result, setResult] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -128,85 +217,87 @@ function OrderLabsTab({ patient }: { patient: PatientResponse }) {
     e.preventDefault();
     setError("");
     setResult(null);
+    if (!doctor) {
+      setError("Select the ordering doctor.");
+      return;
+    }
     setLoading(true);
     const form = new FormData(e.currentTarget);
     const body = {
       testCode: form.get("testCode"),
       priority: form.get("priority"),
-      doctorId: form.get("doctorId"),
+      doctorId: doctor.id,
       notes: form.get("notes") || undefined,
     };
-    const res = await fetch(`/api/patients/${patient.ssn}/order-labs/`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    setLoading(false);
-    if (!res.ok) {
-      setError("Failed to place lab order.");
-      return;
+    try {
+      const res = await fetch(`/api/patients/${patient.ssn}/order-labs/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        setError("Failed to place lab order.");
+        return;
+      }
+      const text = await res.text();
+      setResult(text || "Order placed successfully.");
+      toast.success("Lab order placed.");
+    } catch {
+      setError("Could not reach the lab service. Please try again.");
+    } finally {
+      setLoading(false);
     }
-    const text = await res.text();
-    setResult(text || "Order placed successfully.");
   }
 
   return (
-    <div className="max-w-lg">
+    <Card className="max-w-lg">
+      <div className="mb-4 flex items-center gap-2">
+        <FlaskConical className="size-4 text-brand-ink" aria-hidden />
+        <h3 className="font-display text-sm font-semibold uppercase tracking-wide text-ink-muted">
+          New lab order
+        </h3>
+      </div>
       <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">
-            Test Code
-          </label>
-          <input
-            name="testCode"
-            required
-            placeholder="e.g. CBC, BMP"
-            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">
-            Priority
-          </label>
-          <select
-            name="priority"
-            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
-          >
-            <option value="ROUTINE">Routine</option>
-            <option value="URGENT">Urgent</option>
-            <option value="STAT">STAT</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">
-            Doctor ID
-          </label>
-          <input
-            name="doctorId"
-            required
-            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">
-            Notes (optional)
-          </label>
-          <textarea
-            name="notes"
-            rows={3}
-            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
-          />
-        </div>
-        {error && <p className="text-red-500 text-sm">{error}</p>}
-        {result && <p className="text-green-700 text-sm">{result}</p>}
-        <button
-          type="submit"
-          disabled={loading}
-          className="bg-slate-800 text-white text-sm px-6 py-2 rounded-lg hover:bg-slate-700 disabled:opacity-50 transition-colors"
-        >
-          {loading ? "Ordering…" : "Place Order"}
-        </button>
+        <Field label="Test code" required hint="e.g. CBC, BMP">
+          {(ids) => (
+            <input name="testCode" required className="input" {...ids} />
+          )}
+        </Field>
+        <Field label="Priority" required>
+          {(ids) => (
+            <select name="priority" className="input" {...ids}>
+              <option value="ROUTINE">Routine</option>
+              <option value="URGENT">Urgent</option>
+              <option value="STAT">STAT</option>
+            </select>
+          )}
+        </Field>
+        <DoctorPicker
+          label="Ordering doctor"
+          selectedId={doctor?.id ?? null}
+          onSelect={setDoctor}
+        />
+        <Field label="Notes (optional)">
+          {(ids) => (
+            <textarea name="notes" rows={3} className="input" {...ids} />
+          )}
+        </Field>
+
+        {error && (
+          <div className="rounded-lg border border-danger/25 bg-danger-tint px-3 py-2">
+            <p className="text-sm text-danger">{error}</p>
+          </div>
+        )}
+        {result && (
+          <div className="rounded-lg border border-ok/25 bg-ok-tint px-3 py-2">
+            <p className="text-sm text-ok">{result}</p>
+          </div>
+        )}
+
+        <Button type="submit" loading={loading}>
+          Place order
+        </Button>
       </form>
-    </div>
+    </Card>
   );
 }
